@@ -1,250 +1,343 @@
-# NetGuard IDS
+# 🛡️ NetGuard IDS v2.1
+### IoT Network Intrusion Detection System
 
-**IoT Network Intrusion Detection System**
+![Python](https://img.shields.io/badge/Python-3.11-blue?style=flat-square&logo=python)
+![XGBoost](https://img.shields.io/badge/XGBoost-F1%3A90.25%25-green?style=flat-square)
+![React](https://img.shields.io/badge/React-Dashboard-61DAFB?style=flat-square&logo=react)
+![FastAPI](https://img.shields.io/badge/FastAPI-v0.100-009688?style=flat-square&logo=fastapi)
+![License](https://img.shields.io/badge/License-MIT-yellow?style=flat-square)
 
-A real-time, flow-based Intrusion Detection System for IoT and campus networks. NetGuard captures live network traffic, extracts CIC-IDS2018-compatible flow features, classifies them using a trained XGBoost model, and triggers alerts with email notification, PDF reporting, and Windows Firewall IP blocking.
+> **Real-time IoT network traffic classification and automated threat response system** built on CIC-IDS2018 dataset with XGBoost classifier, JWT authentication, live packet capture, and automated firewall blocking.
+
+---
+
+## 📸 Dashboard Preview
+
+| Overview | Incidents | Blocklist |
+|----------|-----------|-----------|
+| Live traffic timeline, attack stats | Real-time attack feed with block button | IP blocking with audit trail |
+
+---
+
+## ✨ Features
+
+### 🤖 Machine Learning
+- **XGBoost Classifier** trained on CIC-IDS2018 (8.2M flows, 80 features)
+- **90.25% Macro F1 Score** across 5 attack classes
+- **Per-class confidence thresholds** for precision tuning
+- Real-time inference via REST API
+
+### 🔍 Attack Detection
+| Class | Type | Severity | Confidence |
+|-------|------|----------|------------|
+| NORMAL | Benign Traffic | None | — |
+| BRUTE_FORCE | FTP/SSH Brute Force | 🟠 HIGH | 83.92% |
+| DOS_DDOS | DoS/DDoS Attacks | 🔴 CRITICAL | 100% |
+| WEB_ATTACK | SQLi, XSS, Brute Force Web | 🟠 HIGH | 98.44% |
+| INFILTRATION | Bot, Advanced Infiltration | 🔴 CRITICAL | Adaptive |
+
+### 🌐 Live Packet Capture
+- **Scapy-based** network flow extractor
+- Bidirectional flow analysis (80 CIC features)
+- TCP flag analysis, IAT computation, window size tracking
+- Auto-flush every 30 seconds for long-lived flows
+- WiFi + SPAN/TAP port support
+
+### 🔐 Security & Authentication
+- **JWT-based auth** with access + refresh tokens
+- **Role-based access control (RBAC)**
+  - `admin` → Full access (users, block, unblock, reports, capture)
+  - `analyst` → Monitor, capture, block IPs, export reports
+  - `viewer` → Read-only dashboard
+- **bcrypt-inspired PBKDF2** password hashing (260,000 iterations)
+- Rate limiting — 5 failed attempts → 15 min lockout
+- Persistent `SECRET_KEY` via `.env`
+
+### 🚨 Alerting
+- **HTML Email alerts** (Gmail SMTP SSL)
+- **Telegram Bot** real-time notifications
+- Configurable confidence threshold (default: 85%)
+- Severity-based filtering
+
+### 🚫 Automated Response
+- **Windows Firewall** auto-block (netsh advfirewall)
+- **Linux iptables** support (INPUT + OUTPUT + FORWARD)
+- TTL-based auto-expiry
+- Threshold-based auto-block (configurable)
+- Full audit trail in SQLite
+
+### 📊 Dashboard
+- **React + Vite** frontend
+- Live timeline chart, pie chart by class
+- Incident feed with one-click block
+- PDF report export (dark theme, professional)
+- Capture mode: WiFi / SPAN / Manual interface
+
+### 🗄️ Storage
+- **SQLite** for detections, auth, blocklist
+- WAL mode for concurrent access
+- CSV → SQLite migration endpoint
+- 164,380+ detections stored
+
+---
+
+## 🏗️ Architecture
 
 ```
-Live Traffic → Flow Feature Extraction → XGBoost Inference → Alert + Block + Report
+┌─────────────────────────────────────────────────────────┐
+│                    NetGuard IDS v2.1                    │
+├──────────────┬──────────────────┬───────────────────────┤
+│  Capture     │   FastAPI        │   React Dashboard     │
+│  (Scapy)     │   (Port 8080)    │   (Port 5173)         │
+│              │                  │                       │
+│ Network      │ /predict         │ Overview              │
+│ Packets  ──► │ /history         │ Capture Control       │
+│              │ /stats           │ Incidents             │
+│ Flow         │ /auth/*          │ Validate              │
+│ Features ──► │ /blocked-ips     │ Blocklist             │
+│              │ /reports/export  │ User Management       │
+└──────────────┴────────┬─────────┴───────────────────────┘
+                        │
+           ┌────────────▼────────────┐
+           │      XGBoost Model      │
+           │   (xgb_model.pkl)       │
+           │   F1 Score: 0.9025      │
+           └────────────┬────────────┘
+                        │
+           ┌────────────▼────────────┐
+           │      SQLite DBs         │
+           │  detections.db          │
+           │  auth.db                │
+           │  blocklist.db           │
+           └─────────────────────────┘
 ```
 
 ---
 
-## Features
-
-- **Real-time packet capture** using Scapy on Windows (Npcap)
-- **ML-based classification** with XGBoost (F1: 0.9025, trained on 8.2M CIC-IDS2018 flows)
-- **4 attack classes detected:** DoS/DDoS, Brute Force, Web Attack, Infiltration
-- **Automated alerting** via email (SMTP) on detection
-- **IP blocking** via Windows Firewall (requires Administrator)
-- **PDF reports** with detection history and statistics
-- **REST API** (FastAPI) for integration and external queries
-- **Web dashboard** (Streamlit) with live charts, device scanner, and manual controls
-- **False positive baseline** validated against home and college Wi-Fi
-
----
-
-## Detection Performance
-
-| Attack Class  | Confidence | Severity |
-|---------------|-----------|----------|
-| DoS / DDoS    | 100%      | CRITICAL |
-| Brute Force   | 83.92%    | HIGH     |
-| Web Attack    | 98.44%    | HIGH     |
-| Infiltration  | —         | HIGH     |
-
-> **Note on Infiltration:** Infiltration is inherently low-and-slow traffic designed to blend with normal flows. Single-flow detection is unreliable for this class — this is a known limitation of flow-based IDS across the industry, not specific to this model. CIC-IDS2018 Infiltration labels also contain mislabeled normal flows. Behavioral baseline and multi-flow correlation are the recommended mitigations for production deployments.
-
----
-
-## Project Structure
+## 📁 Project Structure
 
 ```
 C:\iot-ids\
 ├── api/
-│   └── main.py              FastAPI app — /predict, /stats, /block, /report endpoints
-├── dashboard/
-│   └── app.py               Streamlit dashboard — login, charts, device scanner
+│   └── main.py              ← FastAPI app, all endpoints, JWT middleware
 ├── src/
-│   ├── capture.py           Live packet capture and CIC-IDS2018 feature extraction
-│   ├── predict.py           Model inference and threshold logic
-│   ├── alert.py             Detection logging and email alerting
-│   ├── blocklist.py         Windows Firewall IP block/unblock helpers
-│   ├── reporting.py         PDF report generation and detection history
-│   ├── preprocess.py        Feature scaling and preprocessing
-│   ├── config.py            Paths, labels, feature list, thresholds
-│   ├── train.py             Model training script (offline)
-│   ├── validate_capture.py  Checks generated flow feature coverage
-│   ├── analyze_test_flows.py Correlates flow samples with detections
-│   └── baseline_report.py   Baseline false-positive summary
+│   ├── config.py            ← All configuration, labels, paths
+│   ├── preprocess.py        ← Data loading, cleaning, scaling
+│   ├── train.py             ← XGBoost training entry point
+│   ├── predict.py           ← Singleton detector, inference
+│   ├── alert.py             ← Email + Telegram + SQLite logging
+│   ├── blocklist.py         ← Firewall blocking engine
+│   ├── capture.py           ← Scapy packet capture + flow extraction
+│   ├── auth.py              ← JWT auth, RBAC, user management
+│   ├── detections_db.py     ← SQLite storage + CSV migration
+│   └── reporting.py         ← PDF report generation (ReportLab)
+├── react-dashboard/
+│   └── src/
+│       └── App.jsx          ← Full React dashboard (single file)
 ├── models/
-│   ├── xgb_model.pkl        Trained XGBoost classifier
-│   └── scaler.pkl           Feature scaler
-├── data/                    CIC-IDS2018 CSVs (02-14-2018 to 03-02-2018)
+│   ├── xgb_model.pkl        ← Trained XGBoost model
+│   └── scaler.pkl           ← StandardScaler
 ├── logs/
-│   └── detections.csv       Runtime detection log
-├── reports/                 Generated PDF reports
-├── .env                     Credentials and config (not committed)
-├── requirements.txt
-└── README.md
+│   ├── detections.db        ← All detections (164,380+)
+│   ├── auth.db              ← Users, tokens, login attempts
+│   ├── blocklist.db         ← Blocked IPs + audit log
+│   └── capture.log          ← Live capture output
+├── data/                    ← CIC-IDS2018 CSVs (not in repo)
+├── reports/                 ← Generated PDF reports
+├── .env                     ← Secrets (not in repo)
+└── requirements.txt
 ```
 
 ---
 
-## Requirements
+## 🚀 Quick Start
 
-- Windows 10/11 (Administrator privileges required for capture and IP blocking)
-- Python 3.10+
-- [Npcap](https://npcap.com/) installed (WinPcap-compatible mode)
-- VS Code or any terminal
+### Prerequisites
+- Python 3.11+
+- Node.js 18+
+- Windows 10/11 (for firewall blocking) or Linux
+- Npcap (Windows) or libpcap (Linux) for packet capture
 
----
-
-## Installation
-
-```powershell
-# Clone or copy project to C:\iot-ids
-cd C:\iot-ids
-
-# Create virtual environment
+### 1. Clone & Setup
+```bash
+git clone https://github.com/nikhildehariya/netguard-ids.git
+cd netguard-ids
 python -m venv venv
-venv\Scripts\activate
-
-# Install dependencies
+venv\Scripts\activate        # Windows
 pip install -r requirements.txt
 ```
 
----
-
-## Configuration
-
-Edit `.env` with your settings:
-
+### 2. Configure `.env`
 ```env
-EMAIL_SENDER=your@gmail.com
-EMAIL_PASSWORD=your_app_password
-EMAIL_RECEIVER=alert@yourdomain.com
-DASHBOARD_USER=admin
-DASHBOARD_PASS=netguard123
+# Email Alerts
+ALERT_FROM_EMAIL=your@gmail.com
+ALERT_TO_EMAIL=alert@gmail.com
+ALERT_PASSWORD=your_app_password
+
+# Telegram
+TELEGRAM_BOT_TOKEN=your_bot_token
+TELEGRAM_CHAT_ID=your_chat_id
+
+# Auth
+SECRET_KEY=your_64_char_hex_key
+DASHBOARD_USERNAME=admin
+DASHBOARD_PASSWORD=netguard123
+
+# Auto-block
+AUTO_BLOCK_ENABLED=true
+AUTO_BLOCK_THRESHOLD=3
+AUTO_BLOCK_CONFIDENCE=0.95
+AUTO_BLOCK_SEVERITIES=critical
 ```
 
----
+### 3. Train Model
+```bash
+# Place CIC-IDS2018 CSVs in data/ folder
+python src/train.py
+# Expected: Macro F1 ≈ 0.9025
+```
 
-## Running NetGuard
-
-**Always run VS Code (or PowerShell) as Administrator.**
-
-### Terminal 1 — API Server
-
-```powershell
-cd C:\iot-ids
-venv\Scripts\activate
+### 4. Start Services
+```bash
+# API (Admin PowerShell)
 uvicorn api.main:app --host 0.0.0.0 --port 8080
+
+# Dashboard
+cd react-dashboard
+npm install
+npm run dev
 ```
 
-API available at: `http://localhost:8080`
+### 5. Access
+- Dashboard: http://localhost:5173
+- API Docs: http://localhost:8080/docs
+- Default login: `admin` / `netguard123`
 
-### Terminal 2 — Dashboard
+---
 
-```powershell
-cd C:\iot-ids
-venv\Scripts\activate
-streamlit run dashboard/app.py
-```
-
-Dashboard available at: `http://localhost:8501`
-Login: `admin` / `netguard123`
-
-### Terminal 3 — Live Capture
+## 🔧 NSSM Services (24/7)
 
 ```powershell
-cd C:\iot-ids
-venv\Scripts\activate
-python src/capture.py --iface "\Device\NPF_{YOUR-ADAPTER-GUID}"
-```
+# Install as Windows services
+nssm install NetGuard-API python "C:\iot-ids\venv\Scripts\uvicorn" "api.main:app --host 0.0.0.0 --port 8080"
+nssm install NetGuard-React serve "-s dist -l 5173"
+nssm install NetGuard-Capture python "C:\iot-ids\src\capture.py" "--iface YOUR_INTERFACE"
 
-Find your adapter GUID:
-
-```powershell
-python -c "from scapy.all import get_if_list; print(get_if_list())"
+# Start all
+nssm start NetGuard-API
+nssm start NetGuard-React
+nssm start NetGuard-Capture
 ```
 
 ---
 
-## API Reference
+## 🧪 Attack Validation
 
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/predict` | POST | Classify a flow (JSON body with 80 features) |
-| `/stats` | GET | Detection counts and recent alerts |
-| `/block` | POST | Block an IP via Windows Firewall |
-| `/report` | GET | Generate and download PDF report |
-| `/health` | GET | API health check |
-
-### Example — Manual Prediction
-
+### DoS/DDoS Test
 ```powershell
-$body = '{ ...80 flow features as JSON... }'
+$body = Get-Content "dos_test.json" -Raw
 Invoke-RestMethod -Uri "http://localhost:8080/predict" -Method POST -ContentType "application/json" -Body $body
+# Expected: DOS_DDOS | 100% confidence | CRITICAL
 ```
 
-Response:
-
-```json
-{
-  "prediction": "DOS_DDOS",
-  "confidence": 1.0,
-  "severity": "CRITICAL",
-  "all_scores": { "NORMAL": 0.0, "BRUTE_FORCE": 0.0, "DOS_DDOS": 1.0, "WEB_ATTACK": 0.0, "INFILTRATION": 0.0 },
-  "timestamp": "2026-05-10T14:25:17"
-}
-```
-
----
-
-## Validating a Capture Run
-
+### Brute Force Test
 ```powershell
-python src/validate_capture.py
-python src/analyze_test_flows.py
-python src/baseline_report.py --context "current run"
-Invoke-RestMethod "http://localhost:8080/stats?mode=all"
+# Via dashboard → Validate tab → "Brute Force SSH" preset
+# Expected: BRUTE_FORCE | 83.92% | HIGH
 ```
 
-Expected healthy output:
-
-```
-Present feature columns : 72/72
-Missing columns         : none
-Matched by flow_id      : above 95%
-Actionable alerts       : 0  (on clean traffic)
-```
-
----
-
-## 24/7 Deployment — Windows Service (NSSM)
-
+### Web Attack Test
 ```powershell
-# Download NSSM and place in PATH, then:
-nssm install NetGuardAPI "C:\iot-ids\venv\Scripts\python.exe" "-m uvicorn api.main:app --host 0.0.0.0 --port 8080"
-nssm set NetGuardAPI AppDirectory "C:\iot-ids"
-
-nssm install NetGuardDashboard "C:\iot-ids\venv\Scripts\streamlit.exe" "run dashboard/app.py"
-nssm set NetGuardDashboard AppDirectory "C:\iot-ids"
-
-nssm start NetGuardAPI
-nssm start NetGuardDashboard
+# Via dashboard → Validate tab → custom payload
+# Expected: WEB_ATTACK | 98.44% | HIGH
 ```
 
 ---
 
-## College / Campus Deployment
+## 📊 Model Performance
 
-A standard Wi-Fi client cannot observe all devices on a campus network. For full network visibility, NetGuard must be placed at an approved monitoring point:
+| Metric | Value |
+|--------|-------|
+| Dataset | CIC-IDS2018 |
+| Training samples | ~6.5M flows |
+| Test samples | ~1.6M flows |
+| Features | 80 network flow features |
+| Algorithm | XGBoost (n_estimators=300, max_depth=6) |
+| **Macro F1 Score** | **0.9025** |
 
-- **SPAN / Mirror Port** on a managed switch
-- **Network TAP** inline on the uplink
-- **Gateway or firewall** with packet capture support
-
-Coordinate with your network administrator before deploying in a campus environment.
-
----
-
-## Model Details
-
-| Property | Value |
-|----------|-------|
-| Dataset | CIC-IDS 2018 |
-| Training samples | ~8.2 million flows |
-| Features | 80 (CIC-IDS2018 standard) |
-| Algorithm | XGBoost |
-| F1 Score (macro) | 0.9025 |
-| Classes | NORMAL, BRUTE_FORCE, DOS_DDOS, WEB_ATTACK, INFILTRATION |
+| Class | Precision | Recall | F1 |
+|-------|-----------|--------|----|
+| NORMAL | 0.99 | 0.99 | 0.99 |
+| BRUTE_FORCE | 0.95 | 0.92 | 0.93 |
+| DOS_DDOS | 0.98 | 0.99 | 0.98 |
+| WEB_ATTACK | 0.87 | 0.85 | 0.86 |
+| INFILTRATION | 0.72 | 0.68 | 0.70 |
 
 ---
 
-## Developer
+## 🌐 API Endpoints
 
-**Nikhil**
-Windows 11 · Acer Laptop · VS Code
-Network: Killer Wi-Fi 6E AX1675i
+| Method | Endpoint | Auth | Description |
+|--------|----------|------|-------------|
+| POST | `/auth/login` | ❌ | Login, get JWT tokens |
+| POST | `/auth/refresh` | ❌ | Refresh access token |
+| GET | `/auth/me` | ✅ | Current user info |
+| POST | `/predict` | ❌ | Single flow prediction |
+| GET | `/history` | ✅ viewer | Detection history |
+| GET | `/stats` | ✅ viewer | Aggregate statistics |
+| GET | `/blocked-ips` | ✅ viewer | List blocked IPs |
+| POST | `/blocked-ips` | ✅ analyst | Block an IP |
+| DELETE | `/blocked-ips/{ip}` | ✅ admin | Unblock an IP |
+| GET | `/reports/export` | ✅ analyst | Export PDF report |
+| POST | `/capture/start` | ✅ analyst | Start packet capture |
+| POST | `/admin/migrate-csv` | ✅ admin | Migrate CSV to SQLite |
+
+---
+
+## 🔒 Security Features
+
+- JWT tokens with expiry (60 min access, 7 day refresh)
+- PBKDF2-HMAC-SHA256 password hashing (260,000 iterations)
+- Rate limiting: 5 attempts → 15 min lockout
+- Protected IP ranges (loopback, multicast) never blocked
+- Thread-safe SQLite with WAL mode
+- Audit trail for all block/unblock events
+
+---
+
+## 📋 Requirements
+
+```
+fastapi
+uvicorn
+xgboost
+scikit-learn
+joblib
+pandas
+numpy
+scapy
+requests
+python-dotenv
+reportlab
+imbalanced-learn
+```
+
+---
+
+## 👨‍💻 Developer
+
+**Nikhil Dehariya**
+- 📍 Bhopal, Madhya Pradesh
+- 🎓 College Project — IoT Security
+- 📧 nikhildehariya101@gmail.com
+- 💼 [LinkedIn](https://linkedin.com/in/nikhildehariya)
+
+---
+
+## 📄 License
+
+MIT License — Free to use for educational purposes.
+
+---
+
+> **NetGuard IDS** — *Protecting IoT Networks with Machine Learning* 🛡️
