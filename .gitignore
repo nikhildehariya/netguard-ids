@@ -1,0 +1,15 @@
+venv/
+__pycache__/
+*.pyc
+*.pkl
+logs/
+data/
+models/
+reports/
+.env
+node_modules/
+dist/
+react-dashboard/dist/
+*.db
+*.csv
+*.log

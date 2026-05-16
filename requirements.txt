@@ -1,0 +1,25 @@
+# Core ML
+pandas==2.2.2
+numpy==1.26.4
+scikit-learn==1.4.2
+xgboost==2.0.3
+imbalanced-learn==0.12.2
+joblib==1.4.0
+
+# API
+fastapi==0.111.0
+uvicorn==0.29.0
+pydantic==2.7.0
+typing_extensions>=4.12.2
+
+# Dashboard
+streamlit==1.33.0
+plotly==5.21.0
+
+# Packet capture
+scapy==2.5.0
+
+# Utilities
+python-dotenv==1.0.1
+requests==2.31.0
+reportlab==4.2.2
