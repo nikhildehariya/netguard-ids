@@ -625,3 +625,46 @@ def migrate_csv(request: Request):
     require_permission(request, "manage_users")
     from detections_db import migrate_csv_to_sqlite
     return migrate_csv_to_sqlite()
+
+
+# ══════════════════════════════════════════════════════════════
+# NETWORK SCANNER ENDPOINTS
+# ══════════════════════════════════════════════════════════════
+
+@app.get("/network/devices")
+def get_network_devices(request: Request):
+    """Return cached device scan results."""
+    require_permission(request, "view")
+    from scanner import get_cached
+    return get_cached()
+
+
+@app.post("/network/scan")
+def scan_network(request: Request, subnet: Optional[str] = None):
+    """Run full ARP + Nmap scan. Analyst or admin only."""
+    require_permission(request, "capture")
+    from scanner import full_scan
+    import threading
+    result = {}
+    def run():
+        nonlocal result
+        result.update(full_scan(subnet))
+    t = threading.Thread(target=run, daemon=True)
+    t.start()
+    t.join(timeout=60)
+    return result
+
+
+@app.post("/network/scan/arp")
+def scan_arp_only(request: Request, subnet: Optional[str] = None):
+    """Quick ARP-only scan (faster). Analyst or admin only."""
+    require_permission(request, "capture")
+    from scanner import arp_scan
+    from datetime import datetime
+    devices = arp_scan(subnet)
+    return {
+        "devices":   devices,
+        "total":     len(devices),
+        "timestamp": datetime.now().isoformat(timespec="seconds"),
+        "scan_type": "arp",
+    }
