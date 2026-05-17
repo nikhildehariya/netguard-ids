@@ -13,3 +13,5 @@ react-dashboard/dist/
 *.db
 *.csv
 *.log
+
+react-dashboard/src/api/
