@@ -5,17 +5,18 @@
 ![XGBoost](https://img.shields.io/badge/XGBoost-F1%3A90.25%25-green?style=flat-square)
 ![React](https://img.shields.io/badge/React-Dashboard-61DAFB?style=flat-square&logo=react)
 ![FastAPI](https://img.shields.io/badge/FastAPI-v0.100-009688?style=flat-square&logo=fastapi)
+![Nmap](https://img.shields.io/badge/Nmap-7.99-orange?style=flat-square)
 ![License](https://img.shields.io/badge/License-MIT-yellow?style=flat-square)
 
-> **Real-time IoT network traffic classification and automated threat response system** built on CIC-IDS2018 dataset with XGBoost classifier, JWT authentication, live packet capture, and automated firewall blocking.
+> **Real-time IoT network traffic classification and automated threat response system** built on CIC-IDS2018 dataset with XGBoost classifier, JWT authentication, live packet capture, network device scanning, and automated firewall blocking.
 
 ---
 
 ## 📸 Dashboard Preview
 
-| Overview | Incidents | Blocklist |
-|----------|-----------|-----------|
-| Live traffic timeline, attack stats | Real-time attack feed with block button | IP blocking with audit trail |
+| Overview | Incidents | Blocklist | Devices |
+|----------|-----------|-----------|---------|
+| Live traffic timeline, attack stats | Real-time attack feed with block button | IP blocking with audit trail | ARP + Nmap network scanner |
 
 ---
 
@@ -43,13 +44,21 @@
 - Auto-flush every 30 seconds for long-lived flows
 - WiFi + SPAN/TAP port support
 
+### 🔎 Network Device Scanner
+- **Quick ARP Scan** — fast device discovery (2-3 seconds)
+- **Full ARP + Nmap Scan** — detailed scan with open ports + OS detection
+- Shows IP address, MAC address, hostname, vendor, open ports
+- Gateway and self-device auto-identification
+- One-click block suspicious devices directly from dashboard
+- Cached results for instant reload
+
 ### 🔐 Security & Authentication
 - **JWT-based auth** with access + refresh tokens
 - **Role-based access control (RBAC)**
-  - `admin` → Full access (users, block, unblock, reports, capture)
-  - `analyst` → Monitor, capture, block IPs, export reports
+  - `admin` → Full access (users, block, unblock, reports, capture, scan)
+  - `analyst` → Monitor, capture, block IPs, scan network, export reports
   - `viewer` → Read-only dashboard
-- **bcrypt-inspired PBKDF2** password hashing (260,000 iterations)
+- **PBKDF2-HMAC-SHA256** password hashing (260,000 iterations)
 - Rate limiting — 5 failed attempts → 15 min lockout
 - Persistent `SECRET_KEY` via `.env`
 
@@ -72,6 +81,8 @@
 - Incident feed with one-click block
 - PDF report export (dark theme, professional)
 - Capture mode: WiFi / SPAN / Manual interface
+- **Network Devices tab** — ARP + Nmap scanner
+- **Users tab** — Admin user management
 
 ### 🗄️ Storage
 - **SQLite** for detections, auth, blocklist
@@ -84,19 +95,21 @@
 ## 🏗️ Architecture
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│                    NetGuard IDS v2.1                    │
-├──────────────┬──────────────────┬───────────────────────┤
-│  Capture     │   FastAPI        │   React Dashboard     │
-│  (Scapy)     │   (Port 8080)    │   (Port 5173)         │
-│              │                  │                       │
-│ Network      │ /predict         │ Overview              │
-│ Packets  ──► │ /history         │ Capture Control       │
-│              │ /stats           │ Incidents             │
-│ Flow         │ /auth/*          │ Validate              │
-│ Features ──► │ /blocked-ips     │ Blocklist             │
-│              │ /reports/export  │ User Management       │
-└──────────────┴────────┬─────────┴───────────────────────┘
+┌─────────────────────────────────────────────────────────────┐
+│                      NetGuard IDS v2.1                      │
+├──────────────┬──────────────────────┬───────────────────────┤
+│  Capture     │   FastAPI Backend    │   React Dashboard     │
+│  (Scapy)     │   (Port 8080)        │   (Port 5173)         │
+│              │                      │                       │
+│ Network      │ /predict             │ Overview              │
+│ Packets  ──► │ /history             │ Capture Control       │
+│              │ /stats               │ Incidents             │
+│ Flow         │ /auth/*              │ Validate              │
+│ Features ──► │ /blocked-ips         │ Blocklist             │
+│              │ /reports/export      │ Devices Scanner       │
+│              │ /network/scan        │ User Management       │
+│              │ /network/scan/arp    │                       │
+└──────────────┴────────┬─────────────┴───────────────────────┘
                         │
            ┌────────────▼────────────┐
            │      XGBoost Model      │
@@ -109,6 +122,14 @@
            │  detections.db          │
            │  auth.db                │
            │  blocklist.db           │
+           └────────────┬────────────┘
+                        │
+           ┌────────────▼────────────┐
+           │     Response Layer      │
+           │  Windows Firewall       │
+           │  Linux iptables         │
+           │  Email (SMTP SSL)       │
+           │  Telegram Bot           │
            └─────────────────────────┘
 ```
 
@@ -121,30 +142,31 @@ C:\iot-ids\
 ├── api/
 │   └── main.py              ← FastAPI app, all endpoints, JWT middleware
 ├── src/
-│   ├── config.py            ← All configuration, labels, paths
-│   ├── preprocess.py        ← Data loading, cleaning, scaling
+│   ├── config.py            ← All configuration, labels, paths, env vars
+│   ├── preprocess.py        ← Data loading, cleaning, feature scaling
 │   ├── train.py             ← XGBoost training entry point
-│   ├── predict.py           ← Singleton detector, inference
-│   ├── alert.py             ← Email + Telegram + SQLite logging
-│   ├── blocklist.py         ← Firewall blocking engine
+│   ├── predict.py           ← Singleton detector, real-time inference
+│   ├── alert.py             ← Email + Telegram alerts + SQLite logging
+│   ├── blocklist.py         ← Windows Firewall + iptables blocking engine
 │   ├── capture.py           ← Scapy packet capture + flow extraction
 │   ├── auth.py              ← JWT auth, RBAC, user management
-│   ├── detections_db.py     ← SQLite storage + CSV migration
-│   └── reporting.py         ← PDF report generation (ReportLab)
+│   ├── detections_db.py     ← SQLite CRUD operations + CSV migration
+│   ├── reporting.py         ← PDF report generation (ReportLab)
+│   └── scanner.py           ← Network device scanner (ARP + Nmap)
 ├── react-dashboard/
 │   └── src/
 │       └── App.jsx          ← Full React dashboard (single file)
 ├── models/
-│   ├── xgb_model.pkl        ← Trained XGBoost model
-│   └── scaler.pkl           ← StandardScaler
+│   ├── xgb_model.pkl        ← Trained XGBoost model (~45 MB)
+│   └── scaler.pkl           ← StandardScaler fitted on training data
 ├── logs/
-│   ├── detections.db        ← All detections (164,380+)
+│   ├── detections.db        ← All detections (164,380+ records)
 │   ├── auth.db              ← Users, tokens, login attempts
-│   ├── blocklist.db         ← Blocked IPs + audit log
+│   ├── blocklist.db         ← Blocked IPs + full audit log
 │   └── capture.log          ← Live capture output
 ├── data/                    ← CIC-IDS2018 CSVs (not in repo)
 ├── reports/                 ← Generated PDF reports
-├── .env                     ← Secrets (not in repo)
+├── .env                     ← Secrets and credentials (not in repo)
 └── requirements.txt
 ```
 
@@ -156,7 +178,8 @@ C:\iot-ids\
 - Python 3.11+
 - Node.js 18+
 - Windows 10/11 (for firewall blocking) or Linux
-- Npcap (Windows) or libpcap (Linux) for packet capture
+- Npcap (Windows) or libpcap (Linux) — for packet capture
+- **Nmap 7.99+** — for network device scanning ([download](https://nmap.org/download.html))
 
 ### 1. Clone & Setup
 ```bash
@@ -178,7 +201,7 @@ ALERT_PASSWORD=your_app_password
 TELEGRAM_BOT_TOKEN=your_bot_token
 TELEGRAM_CHAT_ID=your_chat_id
 
-# Auth
+# Auth — generate: python -c "import secrets; print(secrets.token_hex(32))"
 SECRET_KEY=your_64_char_hex_key
 DASHBOARD_USERNAME=admin
 DASHBOARD_PASSWORD=netguard123
@@ -205,7 +228,8 @@ uvicorn api.main:app --host 0.0.0.0 --port 8080
 # Dashboard
 cd react-dashboard
 npm install
-npm run dev
+npm run build
+serve -s dist -l 5173
 ```
 
 ### 5. Access
@@ -215,13 +239,18 @@ npm run dev
 
 ---
 
-## 🔧 NSSM Services (24/7)
+## 🔧 NSSM Services (24/7 on Windows)
 
 ```powershell
-# Install as Windows services
-nssm install NetGuard-API python "C:\iot-ids\venv\Scripts\uvicorn" "api.main:app --host 0.0.0.0 --port 8080"
+# Install as Windows services (Admin PowerShell)
+nssm install NetGuard-API "C:\iot-ids\venv\Scripts\uvicorn.exe" "api.main:app --host 0.0.0.0 --port 8080"
+nssm set NetGuard-API AppDirectory "C:\iot-ids"
+
 nssm install NetGuard-React serve "-s dist -l 5173"
-nssm install NetGuard-Capture python "C:\iot-ids\src\capture.py" "--iface YOUR_INTERFACE"
+nssm set NetGuard-React AppDirectory "C:\iot-ids\react-dashboard"
+
+nssm install NetGuard-Capture "C:\iot-ids\venv\Scripts\python.exe" "src/capture.py --iface YOUR_INTERFACE"
+nssm set NetGuard-Capture AppDirectory "C:\iot-ids"
 
 # Start all
 nssm start NetGuard-API
@@ -250,6 +279,14 @@ Invoke-RestMethod -Uri "http://localhost:8080/predict" -Method POST -ContentType
 ```powershell
 # Via dashboard → Validate tab → custom payload
 # Expected: WEB_ATTACK | 98.44% | HIGH
+```
+
+### Network Device Scan
+```powershell
+$login = Invoke-RestMethod -Uri "http://localhost:8080/auth/login" -Method POST -ContentType "application/json" -Body '{"username":"admin","password":"netguard123"}'
+$headers = @{Authorization = "Bearer $($login.access_token)"}
+Invoke-RestMethod -Uri "http://localhost:8080/network/scan/arp" -Method POST -Headers $headers
+# Returns: all connected devices with IP, MAC, hostname
 ```
 
 ---
@@ -281,15 +318,30 @@ Invoke-RestMethod -Uri "http://localhost:8080/predict" -Method POST -ContentType
 |--------|----------|------|-------------|
 | POST | `/auth/login` | ❌ | Login, get JWT tokens |
 | POST | `/auth/refresh` | ❌ | Refresh access token |
-| GET | `/auth/me` | ✅ | Current user info |
-| POST | `/predict` | ❌ | Single flow prediction |
+| POST | `/auth/logout` | ❌ | Revoke refresh token |
+| GET | `/auth/me` | ✅ any | Current user info |
+| POST | `/auth/users` | ✅ admin | Create new user |
+| GET | `/auth/users` | ✅ admin | List all users |
+| PATCH | `/auth/users/{u}/role` | ✅ admin | Update user role |
+| DELETE | `/auth/users/{u}` | ✅ admin | Delete user |
+| POST | `/predict` | ❌ | Single flow classification |
 | GET | `/history` | ✅ viewer | Detection history |
 | GET | `/stats` | ✅ viewer | Aggregate statistics |
+| GET | `/health` | ❌ | API health check |
 | GET | `/blocked-ips` | ✅ viewer | List blocked IPs |
 | POST | `/blocked-ips` | ✅ analyst | Block an IP |
 | DELETE | `/blocked-ips/{ip}` | ✅ admin | Unblock an IP |
-| GET | `/reports/export` | ✅ analyst | Export PDF report |
+| POST | `/blocked-ips/bulk-block` | ✅ analyst | Block multiple IPs |
+| POST | `/blocked-ips/bulk-unblock` | ✅ admin | Unblock multiple IPs |
+| GET | `/blocked-ips/audit` | ✅ admin | Block/unblock audit log |
+| GET | `/capture/interfaces` | ✅ analyst | List network interfaces |
 | POST | `/capture/start` | ✅ analyst | Start packet capture |
+| POST | `/capture/stop` | ✅ analyst | Stop packet capture |
+| GET | `/capture/status` | ✅ viewer | Capture status |
+| GET | `/reports/export` | ✅ analyst | Export PDF report |
+| POST | `/network/scan/arp` | ✅ analyst | Quick ARP device scan |
+| POST | `/network/scan` | ✅ analyst | Full ARP + Nmap scan |
+| GET | `/network/devices` | ✅ viewer | Cached device list |
 | POST | `/admin/migrate-csv` | ✅ admin | Migrate CSV to SQLite |
 
 ---
@@ -302,6 +354,7 @@ Invoke-RestMethod -Uri "http://localhost:8080/predict" -Method POST -ContentType
 - Protected IP ranges (loopback, multicast) never blocked
 - Thread-safe SQLite with WAL mode
 - Audit trail for all block/unblock events
+- Persistent SECRET_KEY via `.env` — tokens survive restarts
 
 ---
 
@@ -320,7 +373,10 @@ requests
 python-dotenv
 reportlab
 imbalanced-learn
+python-nmap
 ```
+
+> **Note:** Also install [Nmap 7.99+](https://nmap.org/download.html) separately on your OS.
 
 ---
 
@@ -328,7 +384,7 @@ imbalanced-learn
 
 **Nikhil Dehariya**
 - 📍 Bhopal, Madhya Pradesh
-- 🎓 College Project — IoT Security
+- 🎓 B.Tech AIDS — Jai Narain College of Technology
 - 📧 nikhildehariya101@gmail.com
 - 💼 [LinkedIn](https://linkedin.com/in/nikhildehariya)
 
