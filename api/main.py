@@ -18,6 +18,7 @@ from blocklist import (
     get_block_audit, bulk_block, bulk_unblock
 )
 from reporting import build_pdf_report, load_history
+from alert_settings import get_alert_settings, update_alert_to_email
 from auth import (
     login, logout, refresh_access_token, verify_request, has_permission,
     create_user, list_users, update_user_role, delete_user, toggle_user_active,
@@ -190,6 +191,10 @@ class UpdateRoleRequest(BaseModel):
     role: str
 
 
+class AlertSettingsUpdateRequest(BaseModel):
+    alert_to_email: str
+
+
 # ── Auth helpers ───────────────────────────────────────────────
 
 def get_token(request: Request) -> Optional[str]:
@@ -289,6 +294,21 @@ def remove_user(username: str, request: Request):
 def toggle_user(username: str, request: Request):
     require_permission(request, "manage_users")
     return toggle_user_active(username)
+
+
+@app.get("/admin/alert-settings")
+def get_admin_alert_settings(request: Request):
+    require_permission(request, "manage_users")
+    return get_alert_settings()
+
+
+@app.patch("/admin/alert-settings")
+def patch_admin_alert_settings(req: AlertSettingsUpdateRequest, request: Request):
+    require_permission(request, "manage_users")
+    email = req.alert_to_email.strip()
+    if "@" not in email or "." not in email.split("@")[-1]:
+        raise HTTPException(status_code=400, detail="Please provide a valid email address")
+    return update_alert_to_email(email)
 
 
 # ══════════════════════════════════════════════════════════════
@@ -469,31 +489,52 @@ def capture_interfaces(request: Request):
     # FIX: require "capture" permission
     require_permission(request, "capture")
     scapy_interfaces = get_if_list()
-    items = []
-    windows_by_guid = {}
+    windows_list = []
     if get_windows_if_list is not None:
         try:
-            windows_by_guid = {
-                item.get("guid"): item
-                for item in get_windows_if_list()
-                if item.get("guid")
-            }
+            windows_list = get_windows_if_list() or []
         except Exception:
-            windows_by_guid = {}
+            windows_list = []
 
-    for iface in scapy_interfaces:
+    windows_by_guid = {
+        item.get("guid"): item
+        for item in windows_list
+        if item.get("guid")
+    }
+
+    # Merge both sources so adapters present in Windows metadata but missing
+    # from get_if_list() are still selectable in manual mode.
+    merged_ids: list[str] = []
+    merged_ids.extend(scapy_interfaces)
+    merged_ids.extend(windows_by_guid.keys())
+
+    seen: set[str] = set()
+    items = []
+    for iface in merged_ids:
         if iface.startswith("{") and not iface.startswith("\\Device\\NPF_"):
             iface_id = f"\\Device\\NPF_{iface}"
+            iface_guid = iface
+        elif iface.startswith("\\Device\\NPF_{") and iface.endswith("}"):
+            iface_id = iface
+            iface_guid = iface.replace("\\Device\\NPF_", "")
         else:
             iface_id = iface
-        meta = windows_by_guid.get(iface, {})
-        ips  = [ip for ip in meta.get("ips", []) if not ip.startswith("fe80:")]
+            iface_guid = iface
+
+        if iface_id in seen:
+            continue
+        seen.add(iface_id)
+
+        meta = windows_by_guid.get(iface_guid, {})
+        ips = [ip for ip in meta.get("ips", []) if not ip.startswith("fe80:")]
         label_parts = [meta.get("name") or iface, meta.get("description", ""), ", ".join(ips)]
         label = " - ".join(part for part in label_parts if part)
         items.append({
-            "id": iface_id, "label": label,
+            "id": iface_id,
+            "label": label,
             "name": meta.get("name") or iface,
-            "description": meta.get("description", ""), "ips": ips,
+            "description": meta.get("description", ""),
+            "ips": ips,
         })
     return {"interfaces": items}
 
@@ -641,30 +682,35 @@ def get_network_devices(request: Request):
 
 @app.post("/network/scan")
 def scan_network(request: Request, subnet: Optional[str] = None):
-    """Run full ARP + Nmap scan. Analyst or admin only."""
+    """Run full scan: ping sweep + ARP + Nmap. Analyst or admin only."""
     require_permission(request, "capture")
     from scanner import full_scan
     import threading
     result = {}
     def run():
         nonlocal result
+        # full_scan internally does ping_sweep → arp_scan → nmap_scan
         result.update(full_scan(subnet))
     t = threading.Thread(target=run, daemon=True)
     t.start()
-    t.join(timeout=60)
+    t.join(timeout=120)   # 2 min — ping sweep + nmap needs more time
     return result
 
 
 @app.post("/network/scan/arp")
 def scan_arp_only(request: Request, subnet: Optional[str] = None):
-    """Quick ARP-only scan (faster). Analyst or admin only."""
+    """Quick scan: ping sweep + ARP only (no Nmap). Analyst or admin only."""
     require_permission(request, "capture")
-    from scanner import arp_scan
+    from scanner import arp_scan, update_cache
     from datetime import datetime
-    devices = arp_scan(subnet)
+    # do_ping_sweep=True → pings entire subnet first, then reads ARP table
+    # This ensures all active devices appear even after reboot/switch change
+    devices = arp_scan(subnet, do_ping_sweep=True)
+    timestamp = datetime.now().isoformat(timespec="seconds")
+    update_cache(devices, timestamp)
     return {
         "devices":   devices,
         "total":     len(devices),
-        "timestamp": datetime.now().isoformat(timespec="seconds"),
-        "scan_type": "arp",
+        "timestamp": timestamp,
+        "scan_type": "arp+ping",
     }

@@ -23,6 +23,7 @@ from config import (
     AUTO_BLOCK_CONFIDENCE, AUTO_BLOCK_SEVERITIES,
 )
 from blocklist import block_ip
+from alert_settings import get_alert_email_target
 
 # ── DB Path ────────────────────────────────────────────────────
 DB_PATH = BASE_DIR / "logs" / "detections.db"
@@ -192,7 +193,8 @@ def _build_html_email(result: dict, source_ip: str) -> str:
 
 
 def _send_email(result: dict, source_ip: str):
-    if not all([ALERT_FROM, ALERT_TO, ALERT_PASS]):
+    alert_to = get_alert_email_target() or ALERT_TO
+    if not all([ALERT_FROM, alert_to, ALERT_PASS]):
         print("[alert] Email credentials not set — skipping.")
         return
 
@@ -202,7 +204,7 @@ def _send_email(result: dict, source_ip: str):
     msg = MIMEMultipart("alternative")
     msg["Subject"] = f"[NetGuard IDS] {sev} — {pred} Attack from {source_ip}"
     msg["From"]    = f"NetGuard IDS <{ALERT_FROM}>"
-    msg["To"]      = ALERT_TO
+    msg["To"]      = alert_to
 
     # Plain text fallback
     plain = (
@@ -223,9 +225,9 @@ def _send_email(result: dict, source_ip: str):
         with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
             server.login(ALERT_FROM, ALERT_PASS)
             server.send_message(msg)
-        print(f"[alert] ✅ Email sent → {ALERT_TO}")
+        print(f"[alert] [OK] Email sent to {alert_to}")
     except Exception as e:
-        print(f"[alert] ❌ Email failed: {e}")
+        print(f"[alert] [ERR] Email failed: {e}")
 
 
 # ── Telegram ───────────────────────────────────────────────────
@@ -247,7 +249,7 @@ def _send_telegram(result: dict, source_ip: str):
     )
 
     try:
-        requests.post(
+        response = requests.post(
             f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
             json={
                 "chat_id":    TELEGRAM_CHAT_ID,
@@ -256,9 +258,13 @@ def _send_telegram(result: dict, source_ip: str):
             },
             timeout=5,
         )
-        print("[alert] ✅ Telegram alert sent.")
+        response.raise_for_status()
+        payload = response.json()
+        if not payload.get("ok"):
+            raise RuntimeError(payload.get("description", "Telegram API rejected request"))
+        print("[alert] [OK] Telegram alert sent.")
     except Exception as e:
-        print(f"[alert] ❌ Telegram failed: {e}")
+        print(f"[alert] [ERR] Telegram failed: {e}")
 
 
 # ── Auto-block ─────────────────────────────────────────────────
@@ -286,7 +292,7 @@ def _maybe_auto_block(result: dict, source_ip: str):
     if _recent_attack_count(source_ip) < AUTO_BLOCK_THRESHOLD:
         return
     response = block_ip(source_ip, f"{result['prediction']} auto-block")
-    print(f"[alert] 🚫 Auto-block: {response['message']}")
+    print(f"[alert] [BLOCK] Auto-block: {response['message']}")
 
 
 # ── Main handler ───────────────────────────────────────────────
@@ -299,7 +305,7 @@ def handle_alert(result: dict, source_ip: str = "unknown",
     if (not test_mode
             and result["severity"] != "none"
             and result["confidence"] >= ALERT_CONFIDENCE_THRESHOLD):
-        print(f"[alert] 🚨 {result['prediction']} from {source_ip} "
+        print(f"[alert] [ALERT] {result['prediction']} from {source_ip} "
               f"({result['confidence']*100:.1f}% confidence)")
         _send_email(result, source_ip)
         _send_telegram(result, source_ip)

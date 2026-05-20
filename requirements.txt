@@ -12,10 +12,6 @@ uvicorn==0.29.0
 pydantic==2.7.0
 typing_extensions>=4.12.2
 
-# Dashboard
-streamlit==1.33.0
-plotly==5.21.0
-
 # Packet capture
 scapy==2.5.0
 
@@ -23,3 +19,4 @@ scapy==2.5.0
 python-dotenv==1.0.1
 requests==2.31.0
 reportlab==4.2.2
+python-nmap==0.7.1

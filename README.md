@@ -324,6 +324,8 @@ Invoke-RestMethod -Uri "http://localhost:8080/network/scan/arp" -Method POST -He
 | GET | `/auth/users` | ✅ admin | List all users |
 | PATCH | `/auth/users/{u}/role` | ✅ admin | Update user role |
 | DELETE | `/auth/users/{u}` | ✅ admin | Delete user |
+| GET | `/admin/alert-settings` | ✅ admin | Get alert recipient configuration |
+| PATCH | `/admin/alert-settings` | ✅ admin | Update alert recipient email |
 | POST | `/predict` | ❌ | Single flow classification |
 | GET | `/history` | ✅ viewer | Detection history |
 | GET | `/stats` | ✅ viewer | Aggregate statistics |

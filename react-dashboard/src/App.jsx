@@ -147,7 +147,7 @@ function AuthScreen({ onLogin }) {
             </svg>
           </div>
           <div style={{ fontSize: 28, fontWeight: 700, color: "#f1f5f9", letterSpacing: "-0.02em" }}>NetGuard IDS</div>
-          <div style={{ fontSize: 13, color: "#475569", marginTop: 6, letterSpacing: "0.02em" }}>IoT Intrusion Detection System v2.0</div>
+          <div style={{ fontSize: 13, color: "#475569", marginTop: 6, letterSpacing: "0.02em" }}>IoT Intrusion Detection System v2.1</div>
         </div>
 
         {/* Card */}
@@ -252,12 +252,16 @@ function RadarPulse({ active }) {
 }
 
 // ── Users Panel (Admin only) ─────────────────────────────────
-function UsersPanel({ token, currentUser }) {
+function UsersPanel({ token, currentUser, themeMode }) {
   const [users, setUsers] = useState([]);
+  const [alertEmail, setAlertEmail] = useState("");
+  const [configuredAlertEmail, setConfiguredAlertEmail] = useState("");
+  const [defaultAdminEmail, setDefaultAdminEmail] = useState("");
   const [showCreate, setShowCreate] = useState(false);
   const [form, setForm] = useState({ username: "", email: "", password: "", role: "viewer" });
   const [msg, setMsg] = useState("");
   const [loading, setLoading] = useState(false);
+  const [savingAlert, setSavingAlert] = useState(false);
 
   const authHeaders = { "Content-Type": "application/json", Authorization: `Bearer ${token}` };
 
@@ -266,7 +270,20 @@ function UsersPanel({ token, currentUser }) {
     if (r?.ok) { const d = await r.json(); setUsers(d.users || []); }
   };
 
-  useEffect(() => { loadUsers(); }, []);
+  const loadAlertSettings = async () => {
+    const r = await fetch(`${API}/admin/alert-settings`, { headers: authHeaders }).catch(() => null);
+    if (r?.ok) {
+      const d = await r.json();
+      setAlertEmail(d.alert_to_email || "");
+      setConfiguredAlertEmail(d.configured_alert_to_email || "");
+      setDefaultAdminEmail(d.default_admin_email || "");
+    }
+  };
+
+  useEffect(() => {
+    loadUsers();
+    loadAlertSettings();
+  }, []);
 
   const createUser = async () => {
     setLoading(true);
@@ -292,15 +309,46 @@ function UsersPanel({ token, currentUser }) {
     loadUsers();
   };
 
-  const inputStyle = { width: "100%", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, padding: "10px 12px", color: "#f1f5f9", fontSize: 13, outline: "none", marginBottom: 12 };
-  const labelStyle = { fontSize: 11, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.08em", display: "block", marginBottom: 6, fontWeight: 600 };
+  const saveAlertRecipient = async () => {
+    setSavingAlert(true);
+    const r = await fetch(`${API}/admin/alert-settings`, {
+      method: "PATCH",
+      headers: authHeaders,
+      body: JSON.stringify({ alert_to_email: alertEmail }),
+    }).catch(() => null);
+    if (r?.ok) {
+      const d = await r.json();
+      setAlertEmail(d.alert_to_email || "");
+      setConfiguredAlertEmail(d.configured_alert_to_email || "");
+      setDefaultAdminEmail(d.default_admin_email || "");
+      setMsg("Alert recipient email updated successfully.");
+    } else {
+      const d = await r?.json();
+      setMsg(d?.detail || "Failed to update alert recipient.");
+    }
+    setSavingAlert(false);
+  };
+
+  const isSoft = themeMode === "soft";
+  const inputStyle = {
+    width: "100%",
+    background: isSoft ? "rgba(255,255,255,0.9)" : "rgba(255,255,255,0.05)",
+    border: isSoft ? "1px solid rgba(148,163,184,0.3)" : "1px solid rgba(255,255,255,0.1)",
+    borderRadius: 8,
+    padding: "10px 12px",
+    color: isSoft ? "#0f172a" : "#f1f5f9",
+    fontSize: 13,
+    outline: "none",
+    marginBottom: 12
+  };
+  const labelStyle = { fontSize: 11, color: isSoft ? "#334155" : "#64748b", textTransform: "uppercase", letterSpacing: "0.08em", display: "block", marginBottom: 6, fontWeight: 600 };
 
   return (
     <div style={{ animation: "fadeIn 0.3s ease" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
         <div>
           <div style={{ fontSize: 11, color: "#38bdf8", letterSpacing: "0.15em", textTransform: "uppercase", fontWeight: 700, marginBottom: 4 }}>User Management</div>
-          <div style={{ fontSize: 18, fontWeight: 700, color: "#f1f5f9" }}>{users.length} Registered Users</div>
+          <div className="soft-readable" style={{ fontSize: 18, fontWeight: 700, color: "#f1f5f9" }}>{users.length} Registered Users</div>
         </div>
         <button onClick={() => setShowCreate(s => !s)} style={{ background: "linear-gradient(135deg,#0ea5e9,#2563eb)", border: "none", borderRadius: 10, padding: "10px 20px", color: "white", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
           + Create User
@@ -309,10 +357,62 @@ function UsersPanel({ token, currentUser }) {
 
       {msg && <div style={{ background: "rgba(34,211,160,0.1)", border: "1px solid rgba(34,211,160,0.2)", borderRadius: 8, padding: "10px 14px", marginBottom: 16, fontSize: 13, color: "#22d3a0" }}>{msg}</div>}
 
+      <div style={{ background: isSoft ? "rgba(255,255,255,0.55)" : "rgba(10,22,40,0.8)", border: isSoft ? "1px solid rgba(148,163,184,0.25)" : "1px solid rgba(255,255,255,0.08)", borderRadius: 16, padding: "24px", marginBottom: 20 }}>
+        <div style={{ fontSize: 14, fontWeight: 700, color: isSoft ? "#0f172a" : "#f1f5f9", marginBottom: 6 }}>Notification Settings</div>
+        <div style={{ fontSize: 12, color: isSoft ? "#475569" : "#64748b", marginBottom: 16 }}>
+          Security alert emails will be sent to this address.
+        </div>
+        <label style={labelStyle}>Alert Recipient Email</label>
+        <input
+          value={alertEmail}
+          onChange={e => setAlertEmail(e.target.value)}
+          placeholder="admin@example.com"
+          type="email"
+          style={inputStyle}
+        />
+        <div style={{ fontSize: 11, color: isSoft ? "#64748b" : "#475569", marginBottom: 12 }}>
+          {configuredAlertEmail
+            ? `Configured recipient: ${configuredAlertEmail}`
+            : `Fallback (first active admin): ${defaultAdminEmail || "not available"}`}
+        </div>
+        <div style={{ display: "flex", gap: 10 }}>
+          <button
+            onClick={saveAlertRecipient}
+            disabled={savingAlert}
+            style={{
+              padding: "10px 14px",
+              borderRadius: 8,
+              background: "linear-gradient(135deg,#0ea5e9,#2563eb)",
+              border: "none",
+              color: "white",
+              fontSize: 12,
+              fontWeight: 700,
+              cursor: "pointer"
+            }}
+          >
+            {savingAlert ? "Saving..." : "Save Recipient"}
+          </button>
+          <button
+            onClick={loadAlertSettings}
+            style={{
+              padding: "10px 14px",
+              borderRadius: 8,
+              background: "rgba(255,255,255,0.04)",
+              border: "1px solid rgba(255,255,255,0.08)",
+              color: "#94a3b8",
+              fontSize: 12,
+              cursor: "pointer"
+            }}
+          >
+            Reload
+          </button>
+        </div>
+      </div>
+
       {/* Create User Form */}
       {showCreate && (
-        <div style={{ background: "rgba(10,22,40,0.8)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 16, padding: "24px", marginBottom: 20 }}>
-          <div style={{ fontSize: 14, fontWeight: 700, color: "#f1f5f9", marginBottom: 20 }}>Create New User</div>
+        <div style={{ background: isSoft ? "rgba(255,255,255,0.55)" : "rgba(10,22,40,0.8)", border: isSoft ? "1px solid rgba(148,163,184,0.25)" : "1px solid rgba(255,255,255,0.08)", borderRadius: 16, padding: "24px", marginBottom: 20 }}>
+          <div style={{ fontSize: 14, fontWeight: 700, color: isSoft ? "#0f172a" : "#f1f5f9", marginBottom: 20 }}>Create New User</div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
             <div><label style={labelStyle}>Username</label><input value={form.username} onChange={e => setForm(p => ({ ...p, username: e.target.value }))} placeholder="username" style={inputStyle} /></div>
             <div><label style={labelStyle}>Email</label><input value={form.email} onChange={e => setForm(p => ({ ...p, email: e.target.value }))} placeholder="user@example.com" type="email" style={inputStyle} /></div>
@@ -336,7 +436,7 @@ function UsersPanel({ token, currentUser }) {
       )}
 
       {/* Users Table */}
-      <div style={{ background: "rgba(10,22,40,0.6)", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 16, overflow: "hidden" }}>
+      <div className="users-table" style={{ background: "rgba(10,22,40,0.6)", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 16, overflow: "hidden" }}>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1.5fr 120px 100px 160px", padding: "12px 20px", borderBottom: "1px solid rgba(255,255,255,0.05)", background: "rgba(0,0,0,0.2)" }}>
           {["USERNAME", "EMAIL", "ROLE", "STATUS", "ACTIONS"].map(h => (
             <div key={h} style={{ fontSize: 10, fontWeight: 700, color: "#334155", letterSpacing: "0.1em" }}>{h}</div>
@@ -344,7 +444,7 @@ function UsersPanel({ token, currentUser }) {
         </div>
         {users.map((u, i) => (
           <div key={u.id} style={{ display: "grid", gridTemplateColumns: "1fr 1.5fr 120px 100px 160px", padding: "14px 20px", borderBottom: i < users.length - 1 ? "1px solid rgba(255,255,255,0.04)" : "none", alignItems: "center", background: i % 2 === 0 ? "transparent" : "rgba(255,255,255,0.01)" }}>
-            <div style={{ fontSize: 13, fontWeight: 600, color: "#f1f5f9" }}>
+            <div className="users-name" style={{ fontSize: 13, fontWeight: 600, color: "#f1f5f9" }}>
               {u.username}
               {u.username === currentUser?.username && <span style={{ fontSize: 10, color: "#38bdf8", marginLeft: 6 }}>(you)</span>}
             </div>
@@ -410,11 +510,14 @@ export default function App() {
   const [devices, setDevices] = useState([]);
   const [devicesLoading, setDevicesLoading] = useState(false);
   const [devicesScanTime, setDevicesScanTime] = useState(null);
+  const [devicesScanMode, setDevicesScanMode] = useState(null); // "arp" | "full" | null
+  const [devicesScanError, setDevicesScanError] = useState("");
   const [valPreset, setValPreset] = useState("DoS GoldenEye");
   const [valResult, setValResult] = useState(null);
   const [valLoading, setValLoading] = useState(false);
   const [toast, setToast] = useState(null);
   const [activeTab, setActiveTab] = useState("overview");
+  const [themeMode, setThemeMode] = useState(() => localStorage.getItem("ng_theme") || "dark");
   const [pdfBytes, setPdfBytes] = useState(null);
   const [pdfName, setPdfName] = useState("report.pdf");
   const [showReportModal, setShowReportModal] = useState(false);
@@ -427,6 +530,17 @@ export default function App() {
     setToast({ msg, type });
     setTimeout(() => setToast(null), 3000);
   };
+
+  const toggleTheme = () => {
+    const next = themeMode === "dark" ? "soft" : "dark";
+    setThemeMode(next);
+    localStorage.setItem("ng_theme", next);
+  };
+
+  useEffect(() => {
+    document.body.classList.toggle("ng-soft-theme", themeMode === "soft");
+    document.documentElement.classList.toggle("ng-soft-theme", themeMode === "soft");
+  }, [themeMode]);
 
   const fetchAll = useCallback(async () => {
     try {
@@ -574,11 +688,16 @@ export default function App() {
   ];
 
   return (
-    <div style={{ minHeight: "100vh", background: "#020810", color: "#e2e8f0", fontFamily: "'Space Grotesk', system-ui, sans-serif" }}>
+    <div className={`theme-${themeMode}`} style={{ minHeight: "100vh", background: "#020810", color: "#e2e8f0", fontFamily: "'Space Grotesk', system-ui, sans-serif" }}>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=Space+Mono:wght@400;700&display=swap');
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body { background: #020810; }
+        html.ng-soft-theme,
+        body.ng-soft-theme,
+        body.ng-soft-theme #root {
+          background: #eaf2fb !important;
+        }
         select { appearance: none; cursor: pointer; background: #0a1628; color: #f1f5f9; }
         button { cursor: pointer; font-family: inherit; }
         input { font-family: inherit; }
@@ -602,6 +721,204 @@ export default function App() {
 
 select { color-scheme: dark; } select.dark-input { background: #0a1628 !important; color: #f1f5f9 !important; } select.dark-input option { background: #0a1628 !important; color: #f1f5f9 !important; }
         .panel { background: rgba(255,255,255,0.025); border: 1px solid rgba(255,255,255,0.06); border-radius: 14px; padding: 20px 22px; }
+        .theme-soft {
+          background: #eaf2fb !important;
+          color: #132033 !important;
+        }
+        .theme-soft,
+        .theme-soft > div,
+        .theme-soft nav,
+        .theme-soft aside {
+          background: #eaf2fb !important;
+          color: #132033 !important;
+        }
+        .theme-soft > div[style*="margin-left"] {
+          background: #eaf2fb !important;
+        }
+        .theme-soft div[style*="position: fixed"],
+        .theme-soft div[style*="rgba(5,15,30"],
+        .theme-soft div[style*="#020810"],
+        .theme-soft div[style*="#050f1e"] {
+          background: #f8fbff !important;
+          color: #132033 !important;
+          border-color: rgba(15,23,42,0.12) !important;
+        }
+        .theme-soft .panel,
+        .theme-soft [style*="#020810"],
+        .theme-soft [style*="#050f1e"],
+        .theme-soft [style*="#0a1628"],
+        .theme-soft [style*="rgba(10,22,40"],
+        .theme-soft [style*="rgba(255,255,255,0.02)"],
+        .theme-soft [style*="rgba(255,255,255,0.03)"],
+        .theme-soft [style*="rgba(255,255,255,0.025)"],
+        .theme-soft [style*="rgba(0,0,0,0.2)"] {
+          background: #ffffff !important;
+          color: #132033 !important;
+          border-color: rgba(15,23,42,0.12) !important;
+          box-shadow: none !important;
+        }
+        .theme-soft [style*="color: white"],
+        .theme-soft [style*="color:white"],
+        .theme-soft [style*="white"] {
+          color: #132033 !important;
+        }
+        .theme-soft [style*="rgba(56,189,248,0.1)"],
+        .theme-soft [style*="rgba(14,165,233,0.15)"],
+        .theme-soft [style*="rgba(56,189,248,0.06)"] {
+          background: #dff3ff !important;
+          color: #075985 !important;
+          border-color: rgba(14,165,233,0.28) !important;
+        }
+        .theme-soft [style*="rgba(34,211,160,0.08)"],
+        .theme-soft [style*="rgba(34,211,160,0.1)"],
+        .theme-soft [style*="rgba(34,211,160,0.06)"] {
+          background: #dcfce7 !important;
+          color: #047857 !important;
+          border-color: rgba(16,185,129,0.28) !important;
+        }
+        .theme-soft [style*="rgba(239,68,68,0.08)"],
+        .theme-soft [style*="rgba(239,68,68,0.1)"] {
+          background: #fff1f2 !important;
+          color: #be123c !important;
+          border-color: rgba(244,63,94,0.28) !important;
+        }
+        .theme-soft h1,
+        .theme-soft h2,
+        .theme-soft h3,
+        .theme-soft span,
+        .theme-soft label,
+        .theme-soft code,
+        .theme-soft [style*="#f1f5f9"] {
+          color: #132033 !important;
+        }
+        .theme-soft .panel *,
+        .theme-soft div[style*="position: fixed"] *,
+        .theme-soft div[style*="rgba(5,15,30"] *,
+        .theme-soft div[style*="rgba(10,22,40"] *,
+        .theme-soft div[style*="rgba(255,255,255,0.025)"] *,
+        .theme-soft div[style*="rgba(255,255,255,0.03)"] *,
+        .theme-soft div[style*="rgba(255,255,255,0.04)"] * {
+          color: #132033 !important;
+          opacity: 1 !important;
+        }
+        .theme-soft nav button {
+          color: #334155 !important;
+        }
+        .theme-soft nav button[style*="rgba(56,189,248,0.1)"] {
+          color: #0284c7 !important;
+        }
+        .theme-soft [style*="font-size: 28"],
+        .theme-soft [style*="fontSize: 28"],
+        .theme-soft [style*="font-family: monospace"],
+        .theme-soft [style*="fontFamily: monospace"] {
+          color: #0f172a !important;
+        }
+        .theme-soft [style*="#475569"],
+        .theme-soft [style*="#64748b"] {
+          color: #4b647f !important;
+        }
+        .theme-soft .action-btn {
+          background: #e6f4ff !important;
+          color: #0369a1 !important;
+          border-color: rgba(14,165,233,0.35) !important;
+        }
+        .theme-soft .danger-btn {
+          background: #fff1f2 !important;
+          color: #be123c !important;
+          border-color: rgba(244,63,94,0.35) !important;
+        }
+        .theme-soft .success-btn {
+          background: #dcfce7 !important;
+          color: #047857 !important;
+          border-color: rgba(16,185,129,0.35) !important;
+        }
+        .theme-soft input,
+        .theme-soft select,
+        .theme-soft .dark-input {
+          background: #ffffff !important;
+          color: #132033 !important;
+          border-color: rgba(15,23,42,0.18) !important;
+        }
+        .theme-soft option {
+          background: #ffffff !important;
+          color: #132033 !important;
+        }
+        .theme-soft select,
+        .theme-soft select.dark-input,
+        .theme-soft select[style] {
+          appearance: auto !important;
+          background-color: #ffffff !important;
+          color: #132033 !important;
+          color-scheme: light !important;
+          border: 1px solid rgba(15,23,42,0.18) !important;
+        }
+        .theme-soft select option,
+        .theme-soft select.dark-input option {
+          background-color: #ffffff !important;
+          color: #132033 !important;
+        }
+        .theme-soft div[style*="gridTemplateColumns"],
+        .theme-soft div[style*="grid-template-columns"],
+        .theme-soft div[style*="rgba(10,22,40,0.6)"] {
+          background: #ffffff !important;
+          color: #132033 !important;
+          border-color: rgba(15,23,42,0.12) !important;
+        }
+        .theme-soft div[style*="rgba(0,0,0,0.2)"] {
+          background: #e8f1fb !important;
+        }
+        .theme-soft div[style*="rgba(255,255,255,0.01)"],
+        .theme-soft div[style*="rgba(255,255,255,0.02)"] {
+          background: #f8fbff !important;
+        }
+        .theme-soft [style*="#38bdf8"] {
+          color: #0284c7 !important;
+        }
+        .theme-soft [style*="#22d3a0"] {
+          color: #059669 !important;
+        }
+        .theme-soft [style*="#f87171"] {
+          color: #dc2626 !important;
+        }
+        .theme-soft [style*="#f97316"] {
+          color: #ea580c !important;
+        }
+        .theme-soft [style*="#a78bfa"] {
+          color: #7c3aed !important;
+        }
+        .theme-soft [style*="#ec4899"] {
+          color: #db2777 !important;
+        }
+        .theme-soft .recharts-text,
+        .theme-soft .recharts-cartesian-axis-tick-value {
+          fill: #334155 !important;
+        }
+        .theme-soft .recharts-tooltip-wrapper div {
+          background: #ffffff !important;
+          color: #132033 !important;
+          border-color: rgba(15,23,42,0.18) !important;
+        }
+        .theme-soft .soft-readable,
+        .theme-soft .users-table,
+        .theme-soft .users-table div,
+        .theme-soft .users-name {
+          color: #0f172a !important;
+          opacity: 1 !important;
+        }
+        .theme-soft .users-table {
+          background: #ffffff !important;
+          border-color: rgba(15,23,42,0.16) !important;
+        }
+        .theme-soft .users-table > div {
+          background: #ffffff !important;
+          border-color: rgba(15,23,42,0.12) !important;
+        }
+        .theme-soft .users-table > div:first-child {
+          background: #eef5fc !important;
+        }
+        .theme-soft .users-table .users-name {
+          font-weight: 700 !important;
+        }
       `}</style>
 
       {/* Toast */}
@@ -635,7 +952,7 @@ select { color-scheme: dark; } select.dark-input { background: #0a1628 !importan
             </div>
             <div>
               <div style={{ fontSize: 14, fontWeight: 700, color: "#f1f5f9", letterSpacing: "-0.01em" }}>NetGuard</div>
-              <div style={{ fontSize: 10, color: "#475569", letterSpacing: "0.08em" }}>IDS v2.0</div>
+              <div style={{ fontSize: 10, color: "#475569", letterSpacing: "0.08em" }}>IDS v2.1</div>
             </div>
           </div>
         </div>
@@ -741,9 +1058,14 @@ select { color-scheme: dark; } select.dark-input { background: #0a1628 !importan
               {new Date().toLocaleString()} · {stats.total?.toLocaleString() || 0} events tracked · {(stats.attack_rate || 0).toFixed(1)}% attack pressure
             </div>
           </div>
-          <button onClick={() => setShowReportModal(true)} className="action-btn" style={{ flexShrink: 0 }}>
-            ↓ Export Report
-          </button>
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", justifyContent: "flex-end" }}>
+            <button onClick={toggleTheme} className="action-btn" style={{ flexShrink: 0 }}>
+              {themeMode === "dark" ? "☀ Soft Mode" : "🌙 Dark Mode"}
+            </button>
+            <button onClick={() => setShowReportModal(true)} className="action-btn" style={{ flexShrink: 0 }}>
+              ↓ Export Report
+            </button>
+          </div>
         </div>
 
         {/* ── OVERVIEW TAB ── */}
@@ -1088,31 +1410,60 @@ select { color-scheme: dark; } select.dark-input { background: #0a1628 !importan
             <div style={{ display: "flex", gap: 12, marginBottom: 16, flexWrap: "wrap" }}>
               <button className="action-btn" disabled={devicesLoading} onClick={async () => {
                 setDevicesLoading(true);
+                setDevicesScanMode("arp");
+                setDevicesScanError("");
                 try {
-                  const r = await fetch(`${API}/network/scan/arp`, {
+                  const ctrl = new AbortController();
+                  const tid = setTimeout(() => ctrl.abort(), 90000); // 90s timeout
+                  const res = await fetch(`${API}/network/scan/arp`, {
                     method: "POST",
-                    headers: { Authorization: `Bearer ${TokenStore.getAccess()}` }
-                  }).then(x => x.json());
+                    headers: { Authorization: `Bearer ${TokenStore.getAccess()}` },
+                    signal: ctrl.signal,
+                  });
+                  clearTimeout(tid);
+                  const r = await res.json().catch(() => ({}));
+                  if (!res.ok) throw new Error(r.detail || "ARP scan failed");
                   setDevices(r.devices || []);
                   setDevicesScanTime(r.timestamp);
-                } catch { }
+                  showToast(`Quick scan found ${r.total || 0} devices`);
+                } catch(e) {
+                  const msg = e.name === "AbortError" ? "Quick scan timed out" : (e.message || "Quick scan failed");
+                  setDevicesScanError(msg);
+                  showToast(msg, "error");
+                }
                 setDevicesLoading(false);
+                setDevicesScanMode(null);
               }}>
-                {devicesLoading ? "⏳ Scanning..." : "⚡ Quick ARP Scan"}
+                {devicesLoading && devicesScanMode === "arp" ? "⏳ Scanning (30-60s)..." : "⚡ Quick ARP Scan"}
               </button>
               <button className="action-btn" disabled={devicesLoading} onClick={async () => {
                 setDevicesLoading(true);
+                setDevicesScanMode("full");
+                setDevicesScanError("");
                 try {
-                  const r = await fetch(`${API}/network/scan`, {
+                  const ctrl = new AbortController();
+                  const tid = setTimeout(() => ctrl.abort(), 180000); // 3 min timeout
+                  const res = await fetch(`${API}/network/scan`, {
                     method: "POST",
-                    headers: { Authorization: `Bearer ${TokenStore.getAccess()}` }
-                  }).then(x => x.json());
+                    headers: { Authorization: `Bearer ${TokenStore.getAccess()}` },
+                    signal: ctrl.signal,
+                  });
+                  clearTimeout(tid);
+                  const r = await res.json().catch(() => ({}));
+                  if (!res.ok) throw new Error(r.detail || "Full scan failed");
+                  if (!r.devices) throw new Error("Full scan timed out before results were ready");
                   setDevices(r.devices || []);
                   setDevicesScanTime(r.timestamp);
-                } catch { }
+                  showToast(`Full scan found ${r.total || 0} devices`);
+                } catch(e) {
+                  const msg = e.name === "AbortError" ? "Full scan timed out" : (e.message || "Full scan failed");
+                  setDevicesScanError(msg);
+                  showToast(msg, "error");
+                }
                 setDevicesLoading(false);
+                setDevicesScanMode(null);
               }}>
-                {devicesLoading ? "⏳ Scanning..." : "🔍 Full ARP + Nmap Scan"}
+                {devicesLoading && devicesScanMode === "full" ? "⏳ Scanning (60-120s)..." : "🔍 Full ARP + Nmap Scan"}
               </button>
               {devicesScanTime && (
                 <span style={{ fontSize: 11, color: "#475569", alignSelf: "center" }}>
@@ -1121,10 +1472,24 @@ select { color-scheme: dark; } select.dark-input { background: #0a1628 !importan
               )}
             </div>
 
+            {devicesScanError && !devicesLoading && (
+              <div style={{
+                background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.22)",
+                borderRadius: 10, padding: "10px 14px", marginBottom: 14,
+                color: "#f87171", fontSize: 12
+              }}>
+                {devicesScanError}
+              </div>
+            )}
+
             {devicesLoading && (
               <div style={{ textAlign: "center", padding: "40px 0", color: "#38bdf8" }}>
                 <div style={{ fontSize: 24, marginBottom: 12 }}>📡</div>
-                <div style={{ fontSize: 13, color: "#475569" }}>Scanning network... this may take 10-30 seconds</div>
+                <div style={{ fontSize: 13, color: "#64748b" }}>
+                  {devicesScanMode === "full"
+                    ? "Ping sweep → ARP → Nmap... please wait 30-60 seconds"
+                    : "Ping sweep → ARP scan... please wait 5-15 seconds"}
+                </div>
               </div>
             )}
 
@@ -1138,7 +1503,7 @@ select { color-scheme: dark; } select.dark-input { background: #0a1628 !importan
             {!devicesLoading && devices.length > 0 && (
               <div>
                 <div style={{ fontSize: 12, color: "#475569", marginBottom: 14 }}>
-                  Found <span style={{ color: "#38bdf8", fontWeight: 700 }}>{devices.length}</span> devices on network
+                  Discovered <span style={{ color: "#38bdf8", fontWeight: 700 }}>{devices.length}</span> devices on network
                 </div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                   {devices.map((d, i) => (
@@ -1151,7 +1516,15 @@ select { color-scheme: dark; } select.dark-input { background: #0a1628 !importan
                       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 8 }}>
                         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
                           <div style={{ fontSize: 20 }}>
-                            {d.is_self ? "💻" : d.is_gateway ? "🌐" : "📱"}
+                            {d.device_type === "this_device" || d.is_self
+                              ? "💻"
+                              : d.device_type === "gateway" || d.is_gateway
+                                ? "📶"
+                                : d.device_type === "phone"
+                                  ? "📱"
+                                  : d.device_type === "computer"
+                                    ? "🖥️"
+                                    : "◇"}
                           </div>
                           <div>
                             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -1167,8 +1540,13 @@ select { color-scheme: dark; } select.dark-input { background: #0a1628 !importan
                         </div>
                         <div style={{ textAlign: "right" }}>
                           <div style={{ fontSize: 11, fontFamily: "monospace", color: "#475569" }}>{d.mac || "—"}</div>
-                          <div style={{ fontSize: 10, color: d.status === "online" ? "#22d3a0" : "#ef4444", marginTop: 3, fontWeight: 600 }}>
-                            ● {d.status?.toUpperCase()}
+                          <div style={{
+                            fontSize: 10,
+                            color: d.status === "online" || d.status === "up" ? "#22d3a0" : d.status === "seen_recently" ? "#f97316" : "#ef4444",
+                            marginTop: 3,
+                            fontWeight: 600
+                          }}>
+                            ● {d.status === "seen_recently" ? "SEEN RECENTLY" : d.status?.toUpperCase()}
                           </div>
                         </div>
                       </div>
@@ -1213,7 +1591,7 @@ select { color-scheme: dark; } select.dark-input { background: #0a1628 !importan
 
         {/* ── USERS TAB (admin only) ── */}
         {activeTab === "users" && currentUser?.role === "admin" && (
-          <UsersPanel token={TokenStore.getAccess()} currentUser={currentUser} />
+          <UsersPanel token={TokenStore.getAccess()} currentUser={currentUser} themeMode={themeMode} />
         )}
 
       </div>
