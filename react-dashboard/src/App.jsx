@@ -10,7 +10,7 @@ import BlocklistTab from "./components/BlocklistTab";
 import DevicesTab from "./components/DevicesTab";
 import UsersTab from "./components/UsersTab";
 
-const API = "http://localhost:8081";
+const API = `http://${window.location.hostname || "localhost"}:8080`;
 
 const PRESETS = {
   "DoS GoldenEye": { "Dst Port": 80, "Protocol": 6, "Flow Duration": 6010454, "Tot Fwd Pkts": 4, "Tot Bwd Pkts": 4, "TotLen Fwd Pkts": 285, "TotLen Bwd Pkts": 972, "Fwd Pkt Len Max": 285, "Fwd Pkt Len Min": 0, "Fwd Pkt Len Mean": 71.25, "Fwd Pkt Len Std": 142.5, "Bwd Pkt Len Max": 972, "Bwd Pkt Len Min": 0, "Bwd Pkt Len Mean": 243.0, "Bwd Pkt Len Std": 486.0, "Flow Byts/s": 209.13, "Flow Pkts/s": 1.33, "Flow IAT Mean": 858636.28, "Flow IAT Std": 1865827.78, "Flow IAT Max": 5004855, "Flow IAT Min": 6, "Fwd IAT Tot": 1005599, "Fwd IAT Mean": 335199.66, "Fwd IAT Std": 576060.72, "Fwd IAT Max": 1000372, "Fwd IAT Min": 316, "Bwd IAT Tot": 6010448, "Bwd IAT Mean": 2003482.66, "Bwd IAT Std": 2646706.61, "Bwd IAT Max": 5005181, "Bwd IAT Min": 5229, "Fwd PSH Flags": 0, "Bwd PSH Flags": 0, "Fwd URG Flags": 0, "Bwd URG Flags": 0, "Fwd Header Len": 136, "Bwd Header Len": 136, "Fwd Pkts/s": 0.66, "Bwd Pkts/s": 0.66, "Pkt Len Min": 0, "Pkt Len Max": 972, "Pkt Len Mean": 139.66, "Pkt Len Std": 326.04, "Pkt Len Var": 106306.0, "FIN Flag Cnt": 0, "SYN Flag Cnt": 0, "RST Flag Cnt": 0, "PSH Flag Cnt": 1, "ACK Flag Cnt": 0, "URG Flag Cnt": 0, "CWE Flag Count": 0, "ECE Flag Cnt": 0, "Down/Up Ratio": 1, "Pkt Size Avg": 157.12, "Fwd Seg Size Avg": 71.25, "Bwd Seg Size Avg": 243.0, "Subflow Fwd Pkts": 4, "Subflow Fwd Byts": 285, "Subflow Bwd Pkts": 4, "Subflow Bwd Byts": 972, "Init Fwd Win Byts": 26883, "Init Bwd Win Byts": 219, "Fwd Act Data Pkts": 1, "Fwd Seg Size Min": 32, "Active Mean": 0, "Active Std": 0, "Active Max": 0, "Active Min": 0, "Idle Mean": 0, "Idle Std": 0, "Idle Max": 0, "Idle Min": 0 },
@@ -348,9 +348,10 @@ export default function App() {
   useEffect(() => {
     if (!auth) return;
     fetchAll();
-    const t = setInterval(fetchAll, 8000);
+    const intervalMs = captureRunning ? 3000 : 8000;
+    const t = setInterval(fetchAll, intervalMs);
     return () => clearInterval(t);
-  }, [auth, fetchAll]);
+  }, [auth, captureRunning, fetchAll]);
 
   // Auto-login if valid session exists
   useEffect(() => {
@@ -384,11 +385,18 @@ export default function App() {
     }
 
     history.forEach(r => {
-      const t = new Date(r.timestamp);
+      if (!r || !r.timestamp) return;
+      let raw = String(r.timestamp);
+      if (!raw.endsWith("Z") && !raw.includes("+") && raw.includes("T")) {
+        raw += "Z";
+      }
+      const t = new Date(raw);
+      if (isNaN(t.getTime())) return;
       const minuteKey = `${t.getFullYear()}-${t.getMonth()}-${t.getDate()} ${t.getHours()}:${t.getMinutes()}`;
       const bucket = buckets.find(b => b.minuteKey === minuteKey);
       if (bucket) {
-        bucket[r.prediction] = (bucket[r.prediction] || 0) + 1;
+        const pred = r.prediction || "NORMAL";
+        bucket[pred] = (bucket[pred] || 0) + 1;
       }
     });
 
@@ -468,16 +476,32 @@ export default function App() {
         (i.name && i.name.toLowerCase().includes("wi-fi")) || 
         (i.description && i.description.toLowerCase().includes("wi-fi")) ||
         (i.name && i.name.toLowerCase().includes("wireless")) ||
-        (i.description && i.description.toLowerCase().includes("wireless"))
+        (i.description && i.description.toLowerCase().includes("wireless")) ||
+        (i.label && i.label.toLowerCase().includes("wi-fi")) ||
+        (i.label && i.label.toLowerCase().includes("wireless"))
       );
       if (wifiAdapter) {
         setSelectedIface(wifiAdapter.id);
         showToast("Auto-detected Wi-Fi: " + (wifiAdapter.name || "Interface"));
       } else {
-        setSelectedIface(WIFI_GUID);
+        const active = interfaces.find(i => i.ips && i.ips.length && i.ips.some(ip => !ip.startsWith("127.") && !ip.startsWith("169.254")));
+        if (active) setSelectedIface(active.id);
+        else if (interfaces.length) setSelectedIface(interfaces[0].id);
       }
     } else if (mode === "span") {
-      setSelectedIface(SPAN_GUID);
+      const ethAdapter = interfaces.find(i =>
+        (i.name && i.name.toLowerCase().includes("ethernet")) ||
+        (i.description && i.description.toLowerCase().includes("ethernet")) ||
+        (i.label && i.label.toLowerCase().includes("ethernet"))
+      );
+      if (ethAdapter) {
+        setSelectedIface(ethAdapter.id);
+        showToast("Auto-selected Ethernet: " + (ethAdapter.name || "Interface"));
+      } else {
+        const active = interfaces.find(i => i.ips && i.ips.length && i.ips.some(ip => !ip.startsWith("127.") && !ip.startsWith("169.254")));
+        if (active) setSelectedIface(active.id);
+        else if (interfaces.length) setSelectedIface(interfaces[0].id);
+      }
     } else if (mode === "manual") {
       const active = interfaces.find(i => i.ips && i.ips.length && i.ips.some(ip => !ip.startsWith("127.") && !ip.startsWith("169.254")));
       if (active) setSelectedIface(active.id);

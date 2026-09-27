@@ -268,7 +268,7 @@ def process_packet(pkt):
             if f["init_win_bwd"] == -1 and direction == "bwd":
                 f["init_win_bwd"] = tcp.window
 
-        # Send flow every 20 packets or on FIN/RST
+        # Send flow every 5 packets, on FIN/RST, or if single packet
         total_pkts  = f["pkts_fwd"] + f["pkts_bwd"]
         should_send = False
 
@@ -276,10 +276,10 @@ def process_packet(pkt):
             if pkt[TCP].flags & 0x01 or pkt[TCP].flags & 0x04:  # FIN or RST
                 should_send = True
 
-        if total_pkts > 0 and total_pkts % 20 == 0:
+        if total_pkts > 0 and total_pkts % 5 == 0:
             should_send = True
 
-        if should_send and total_pkts >= 2:
+        if should_send and total_pkts >= 1:
             features = flow_to_features(f, f["src_ip"])
             threading.Thread(
                 target=send_to_api,
@@ -289,16 +289,16 @@ def process_packet(pkt):
 
 
 def flush_flows():
-    """Send remaining flows every 30 seconds."""
+    """Flush idle flows every 2 seconds for immediate real-time dashboard updates."""
     global flows
     while capture_running:
-        time.sleep(30)
+        time.sleep(2)
         now = time.time()
         with lock:
             to_flush = [
                 k for k, f in flows.items()
-                if f["last"] and (now - f["last"]) > 30
-                and (f["pkts_fwd"] + f["pkts_bwd"]) >= 2
+                if f["last"] and (now - f["last"]) >= 2
+                and (f["pkts_fwd"] + f["pkts_bwd"]) >= 1
             ]
             for k in to_flush:
                 f = flows[k]

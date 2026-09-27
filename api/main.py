@@ -566,6 +566,16 @@ def capture_start(req: CaptureRequest, request: Request):
     iface_raw   = req.interface
     iface_clean = iface_raw.replace("\\Device\\NPF_", "").replace("/Device/NPF_", "")
     valid_interfaces = set(get_if_list())
+    if get_windows_if_list is not None:
+        try:
+            for w_iface in (get_windows_if_list() or []):
+                guid = w_iface.get("guid")
+                if guid:
+                    valid_interfaces.add(guid)
+                    valid_interfaces.add(f"\\Device\\NPF_{guid}")
+        except Exception:
+            pass
+
     if iface_clean not in valid_interfaces and iface_raw not in valid_interfaces:
         raise HTTPException(
             status_code=400,
