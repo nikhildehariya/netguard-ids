@@ -14,6 +14,8 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from datetime import datetime, timezone
 import requests
+import hmac
+import hashlib
 
 from config import (
     ALERT_FROM, ALERT_TO, ALERT_PASS,
@@ -21,6 +23,7 @@ from config import (
     TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID,
     AUTO_BLOCK_ENABLED, AUTO_BLOCK_THRESHOLD,
     AUTO_BLOCK_CONFIDENCE, AUTO_BLOCK_SEVERITIES,
+    AUTO_BLOCK_TTL, SECRET_KEY, API_URL,
 )
 from blocklist import block_ip
 from alert_settings import get_alert_email_target
@@ -236,6 +239,14 @@ def _send_telegram(result: dict, source_ip: str):
         return
 
     sev_icon = {"critical": "🔴", "high": "🟠", "none": "🟢"}.get(result["severity"], "⚪")
+    
+    if source_ip and source_ip != "unknown":
+        sig = hmac.new(SECRET_KEY.encode(), source_ip.encode(), hashlib.sha256).hexdigest()[:16]
+        block_link = f"{API_URL}/api/telegram/block?ip={source_ip}&sig={sig}"
+        action_line = f"⚡ [🚫 Block IP (1 Hour)]({block_link}) | [Open Dashboard](http://localhost:5173)"
+    else:
+        action_line = f"[Open Dashboard](http://localhost:5173)"
+
     message = (
         f"{sev_icon} *NetGuard IDS Alert*\n"
         f"━━━━━━━━━━━━━━━━━━━━\n"
@@ -245,7 +256,7 @@ def _send_telegram(result: dict, source_ip: str):
         f"🌐 *Source IP:* `{source_ip}`\n"
         f"🕐 *Time:* `{result['timestamp']}`\n"
         f"━━━━━━━━━━━━━━━━━━━━\n"
-        f"[Open Dashboard](http://localhost:5173)"
+        f"{action_line}"
     )
 
     try:
@@ -291,7 +302,7 @@ def _maybe_auto_block(result: dict, source_ip: str):
         return
     if _recent_attack_count(source_ip) < AUTO_BLOCK_THRESHOLD:
         return
-    response = block_ip(source_ip, f"{result['prediction']} auto-block")
+    response = block_ip(source_ip, f"{result['prediction']} auto-block", ttl_seconds=AUTO_BLOCK_TTL)
     print(f"[alert] [BLOCK] Auto-block: {response['message']}")
 
 

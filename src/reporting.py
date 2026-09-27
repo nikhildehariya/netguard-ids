@@ -19,6 +19,8 @@ def load_history(limit: int | None = None, mode: str = "live", path: str | Path 
     if not rows:
         return pd.DataFrame(columns=LOG_COLUMNS)
     df = pd.DataFrame(rows)
+    if not df.empty:
+        df = df.sort_values(by="timestamp", ascending=True)
     for col in LOG_COLUMNS:
         if col not in df.columns:
             df[col] = ""

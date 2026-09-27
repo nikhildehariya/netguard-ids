@@ -7,7 +7,9 @@ import subprocess
 import time
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+import hmac
+import hashlib
+from fastapi.responses import FileResponse, HTMLResponse
 from pydantic import BaseModel, Field
 from typing import Optional
 
@@ -24,6 +26,8 @@ from auth import (
     create_user, list_users, update_user_role, delete_user, toggle_user_active,
     ROLE_PERMISSIONS
 )
+from config import AGENT_SECRET_KEY, SECRET_KEY
+
 
 try:
     from scapy.all import get_if_list
@@ -181,6 +185,9 @@ class RegisterRequest(BaseModel):
     email: str
     password: str
     role: str = "viewer"
+    full_name: Optional[str] = ""
+    phone: Optional[str] = ""
+    designation: Optional[str] = ""
 
 
 class RefreshRequest(BaseModel):
@@ -269,7 +276,7 @@ def auth_me(request: Request):
 @app.post("/auth/users")
 def register_user(req: RegisterRequest, request: Request):
     require_permission(request, "manage_users")
-    return create_user(req.username, req.email, req.password, req.role)
+    return create_user(req.username, req.email, req.password, req.role, req.full_name, req.phone, req.designation)
 
 
 @app.get("/auth/users")
@@ -317,12 +324,10 @@ def patch_admin_alert_settings(req: AlertSettingsUpdateRequest, request: Request
 
 @app.post("/predict")
 def predict(record: TrafficRecord, http_request: Request):
-    # FIX: capture.py sends directly without auth (internal), but dashboard
-    # calls go through auth. Allow both: skip auth for internal loopback,
-    # require "view" for external callers.
-    # Simplest industry approach: capture.py is internal, so /predict is
-    # intentionally open for the capture pipeline. Dashboard reads via
-    # /history and /stats which ARE protected.
+    # Secure prediction endpoint: require agent key or client user token
+    agent_key = http_request.headers.get("X-Agent-Key")
+    if not (agent_key and agent_key == AGENT_SECRET_KEY):
+        require_permission(http_request, "view")
     try:
         data = {
             "Dst Port":           record.Dst_Port,
@@ -435,7 +440,7 @@ def health():
 
 
 @app.get("/history")
-def history(limit: int = 100, mode: str = "live", request: Request = None):
+def history(limit: int = 100, mode: str = "all", request: Request = None):
     # FIX: require "view" permission so viewer/analyst can access dashboard data
     require_permission(request, "view")
     df = load_history(limit=limit, mode=mode)
@@ -443,7 +448,7 @@ def history(limit: int = 100, mode: str = "live", request: Request = None):
 
 
 @app.get("/stats")
-def stats(mode: str = "live", limit: int | None = None, request: Request = None):
+def stats(mode: str = "all", limit: int | None = None, request: Request = None):
     # FIX: require "view" permission
     require_permission(request, "view")
     df = load_history(limit=limit, mode=mode)
@@ -604,6 +609,64 @@ def capture_stop(request: Request):
 # matches them correctly and doesn't swallow them as an {ip} value.
 # ══════════════════════════════════════════════════════════════
 
+@app.get("/api/telegram/block", response_class=HTMLResponse)
+def telegram_quick_block(ip: str, sig: str):
+    """Secure, signed block from Telegram alert."""
+    expected = hmac.new(SECRET_KEY.encode(), ip.encode(), hashlib.sha256).hexdigest()[:16]
+    if not hmac.compare_digest(sig, expected):
+         return HTMLResponse(
+             status_code=403,
+             content="""
+             <html>
+             <head>
+                 <style>
+                     body { background-color: #0f172a; color: #f87171; font-family: sans-serif; text-align: center; padding-top: 100px; }
+                     .card { background-color: #1e293b; border: 1px solid #ef4444; border-radius: 12px; display: inline-block; padding: 30px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+                 </style>
+             </head>
+             <body>
+                 <div class="card">
+                     <h1>❌ Signature Verification Failed</h1>
+                     <p>The quick-block signature is invalid or has expired.</p>
+                 </div>
+             </body>
+             </html>
+             """
+         )
+
+    res = block_ip(ip, reason="Telegram Triage Action", blocked_by="telegram_admin", ttl_seconds=3600)
+    
+    if res["blocked"]:
+        message_html = f"""
+        <h1 style="color: #22d3a0;">✅ IP Successfully Blocked</h1>
+        <p style="color: #94a3b8;">IP address <strong>{ip}</strong> has been temporarily blocked for 1 hour.</p>
+        """
+    else:
+        message_html = f"""
+        <h1 style="color: #f97316;">⚠️ Block Refused</h1>
+        <p style="color: #94a3b8;">Reason: {res['message']}</p>
+        """
+
+    return HTMLResponse(
+        content=f"""
+        <html>
+        <head>
+            <style>
+                body {{ background-color: #0f172a; color: #f1f5f9; font-family: sans-serif; text-align: center; padding-top: 100px; }}
+                .card {{ background-color: #1e293b; border: 1px solid #334155; border-radius: 12px; display: inline-block; padding: 30px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }}
+                strong {{ color: #38bdf8; }}
+            </style>
+        </head>
+        <body>
+            <div class="card">
+                {message_html}
+            </div>
+        </body>
+        </html>
+        """
+    )
+
+
 @app.get("/blocked-ips/audit")
 def block_audit_log(ip: Optional[str] = None, limit: int = 200, request: Request = None):
     """Full audit log of all block/unblock events. Admin only."""
@@ -684,16 +747,31 @@ def get_network_devices(request: Request):
 def scan_network(request: Request, subnet: Optional[str] = None):
     """Run full scan: ping sweep + ARP + Nmap. Analyst or admin only."""
     require_permission(request, "capture")
-    from scanner import full_scan
+    from scanner import full_scan, get_cached
     import threading
     result = {}
+    error = {}
     def run():
-        nonlocal result
-        # full_scan internally does ping_sweep → arp_scan → nmap_scan
-        result.update(full_scan(subnet))
+        nonlocal result, error
+        try:
+            # full_scan internally does ping_sweep → arp_scan → nmap_scan
+            result.update(full_scan(subnet))
+        except Exception as exc:
+            error["detail"] = str(exc)
     t = threading.Thread(target=run, daemon=True)
     t.start()
     t.join(timeout=120)   # 2 min — ping sweep + nmap needs more time
+    if error:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=500, detail=error["detail"])
+    if t.is_alive():
+        cached = get_cached()
+        return {
+            **cached,
+            "partial": True,
+            "scan_type": "full-timeout-cache",
+            "message": "Full scan is still running; showing the latest cached devices.",
+        }
     return result
 
 
@@ -703,9 +781,7 @@ def scan_arp_only(request: Request, subnet: Optional[str] = None):
     require_permission(request, "capture")
     from scanner import arp_scan, update_cache
     from datetime import datetime
-    # do_ping_sweep=True → pings entire subnet first, then reads ARP table
-    # This ensures all active devices appear even after reboot/switch change
-    devices = arp_scan(subnet, do_ping_sweep=True)
+    devices = arp_scan(subnet, do_ping_sweep=False)
     timestamp = datetime.now().isoformat(timespec="seconds")
     update_cache(devices, timestamp)
     return {
@@ -714,3 +790,78 @@ def scan_arp_only(request: Request, subnet: Optional[str] = None):
         "timestamp": timestamp,
         "scan_type": "arp+ping",
     }
+
+
+# ══════════════════════════════════════════════════════════════
+# LICENSING ENDPOINTS (COMMERCIAL MONETIZATION)
+# ══════════════════════════════════════════════════════════════
+
+class LicenseActivationRequest(BaseModel):
+    key: str
+
+def check_license_key(key: str) -> dict:
+    if not key:
+        return {"status": "expired", "message": "No license key found"}
+    # Master developer key
+    if key == "NETGUARD-DEV-MASTER-999":
+        return {"status": "active", "expires_at": "2099-12-31", "client": "Nikhil Developer"}
+    try:
+        parts = key.split("-")
+        if len(parts) != 3 or parts[0] != "NETGUARD":
+            return {"status": "expired", "message": "Invalid license key format"}
+        
+        date_str = parts[1]
+        checksum = parts[2]
+        
+        # Verify basic checksum using SECRET_KEY to prevent fraud
+        expected_checksum = hashlib.sha256(f"{date_str}-{SECRET_KEY}".encode()).hexdigest()[:6].upper()
+        
+        if checksum != expected_checksum:
+            return {"status": "expired", "message": "License signature verification failed"}
+            
+        import datetime
+        exp_date = datetime.datetime.strptime(date_str, "%Y%m%d").date()
+        today = datetime.date.today()
+        
+        if exp_date < today:
+            return {"status": "expired", "expires_at": str(exp_date), "message": f"License expired on {exp_date}"}
+            
+        return {"status": "active", "expires_at": str(exp_date), "client": "Valued NetGuard Client"}
+    except Exception as e:
+        return {"status": "expired", "message": f"License check error: {str(e)}"}
+
+@app.get("/api/license/status")
+def get_license_status():
+    # Read LICENSE_KEY from env, fallback to config
+    from dotenv import dotenv_values
+    config_env = dotenv_values(".env")
+    key = config_env.get("LICENSE_KEY") or os.environ.get("LICENSE_KEY", "")
+    return check_license_key(key)
+
+@app.post("/api/license/activate")
+def activate_license(req: LicenseActivationRequest):
+    val = check_license_key(req.key)
+    if val["status"] != "active":
+        raise HTTPException(status_code=400, detail=val["message"])
+    
+    # Save the key into .env file
+    env_path = Path(__file__).resolve().parent.parent / ".env"
+    lines = []
+    key_written = False
+    if env_path.exists():
+        with open(env_path, "r") as f:
+            for line in f:
+                if line.strip().startswith("LICENSE_KEY="):
+                    lines.append(f"LICENSE_KEY={req.key}\n")
+                    key_written = True
+                else:
+                    lines.append(line)
+    if not key_written:
+        lines.append(f"LICENSE_KEY={req.key}\n")
+    
+    with open(env_path, "w") as f:
+        f.writelines(lines)
+        
+    # Reload OS env for current process
+    os.environ["LICENSE_KEY"] = req.key
+    return {"message": "License successfully activated!", "expires_at": val["expires_at"], "client": val["client"]}

@@ -87,7 +87,7 @@ ALL_FEATURE_COLS   = FEATURE_COLS
 
 # ── API ───────────────────────────────────────────────────────
 API_HOST = "0.0.0.0"
-API_PORT = 8080
+API_PORT = int(os.getenv("API_PORT", "8080"))
 API_URL  = f"http://localhost:{API_PORT}"
 
 ALERT_CONFIDENCE_THRESHOLD = 0.85
@@ -134,12 +134,22 @@ SECRET_KEY = os.getenv("SECRET_KEY", _secrets.token_hex(32))
 # ── Automated Response ────────────────────────────────────────
 AUTO_BLOCK_ENABLED = os.getenv("AUTO_BLOCK_ENABLED", "false").lower() == "true"
 AUTO_BLOCK_THRESHOLD = int(os.getenv("AUTO_BLOCK_THRESHOLD", "3"))
-AUTO_BLOCK_CONFIDENCE = float(os.getenv("AUTO_BLOCK_CONFIDENCE", "0.95"))
+AUTO_BLOCK_CONFIDENCE = float(os.getenv("AUTO_BLOCK_CONFIDENCE", "0.98"))
+AUTO_BLOCK_TTL = int(os.getenv("AUTO_BLOCK_TTL", "3600")) # Default 1 hour
 AUTO_BLOCK_SEVERITIES = {
     item.strip()
     for item in os.getenv("AUTO_BLOCK_SEVERITIES", "critical").split(",")
     if item.strip()
 }
+
+WHITELISTED_IPS = {
+    ip.strip()
+    for ip in os.getenv("WHITELISTED_IPS", "8.8.8.8,8.8.4.4,1.1.1.1").split(",")
+    if ip.strip()
+}
+
+# ── Agent Security — internal packet prediction key ───────────
+AGENT_SECRET_KEY = os.getenv("AGENT_SECRET_KEY", "netguard-agent-secret-key-default")
 
 # ── Skip corrupt files ────────────────────────────────────────
 SKIP_FILES = ["02-20-2018.csv"]

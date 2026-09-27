@@ -10,7 +10,7 @@ import numpy as np
 from datetime import datetime
 from collections import defaultdict
 
-from config import API_URL
+from config import API_URL, AGENT_SECRET_KEY
 
 try:
     from scapy.all import sniff, IP, TCP, UDP, ICMP
@@ -159,6 +159,7 @@ def send_to_api(features: dict):
         resp = requests.post(
             f"{API_URL}/predict",
             json=features,
+            headers={"X-Agent-Key": AGENT_SECRET_KEY},
             timeout=2
         )
         result = resp.json()

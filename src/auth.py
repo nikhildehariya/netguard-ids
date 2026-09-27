@@ -16,12 +16,14 @@ from typing import Optional
 # ── Config ────────────────────────────────────────────────────
 AUTH_DB_PATH = Path(__file__).resolve().parent.parent / "logs" / "auth.db"
 
-# FIX: Import SECRET_KEY from config so it persists across restarts
-# (set SECRET_KEY=<hex> in your .env to make tokens survive restarts)
+# FIX: Import SECRET_KEY and initialization credentials from config so it persists across restarts
 try:
-    from config import SECRET_KEY
+    from config import SECRET_KEY, DASHBOARD_USERNAME, DASHBOARD_PASSWORD
 except ImportError:
     SECRET_KEY = secrets.token_hex(32)
+    DASHBOARD_USERNAME = "admin"
+    DASHBOARD_PASSWORD = "netguard123"
+
 
 ACCESS_TOKEN_EXPIRE_MINUTES  = 60
 REFRESH_TOKEN_EXPIRE_DAYS    = 7
@@ -71,13 +73,26 @@ def init_db():
             attempted_at TEXT NOT NULL
         );
     """)
+    # Migrations: Add full_name, phone, and designation if not existing
+    try:
+        c.execute("ALTER TABLE users ADD COLUMN full_name TEXT DEFAULT ''")
+    except sqlite3.OperationalError:
+        pass
+    try:
+        c.execute("ALTER TABLE users ADD COLUMN phone TEXT DEFAULT ''")
+    except sqlite3.OperationalError:
+        pass
+    try:
+        c.execute("ALTER TABLE users ADD COLUMN designation TEXT DEFAULT ''")
+    except sqlite3.OperationalError:
+        pass
     conn.commit()
 
     # Create default admin if no users exist
     c.execute("SELECT COUNT(*) FROM users")
     if c.fetchone()[0] == 0:
-        _create_user_internal(conn, "admin", "admin@netguard.local", "netguard123", "admin")
-        print("[auth] Default admin created: admin / netguard123")
+        _create_user_internal(conn, DASHBOARD_USERNAME, f"{DASHBOARD_USERNAME}@netguard.local", DASHBOARD_PASSWORD, "admin", "System Administrator", "+919999999999", "Security Operations")
+        print(f"[auth] Default admin created: {DASHBOARD_USERNAME} / {DASHBOARD_PASSWORD}")
 
     conn.close()
 
@@ -141,16 +156,16 @@ def _verify_token(token: str) -> Optional[dict]:
 
 
 # ── User Management ───────────────────────────────────────────
-def _create_user_internal(conn, username, email, password, role):
+def _create_user_internal(conn, username, email, password, role, full_name="", phone="", designation=""):
     c = conn.cursor()
     c.execute(
-        "INSERT INTO users (username, email, password_hash, role, created_at) VALUES (?,?,?,?,?)",
-        (username, email, _make_password_hash(password), role, datetime.now().isoformat())
+        "INSERT INTO users (username, email, password_hash, role, created_at, full_name, phone, designation) VALUES (?,?,?,?,?,?,?,?)",
+        (username, email, _make_password_hash(password), role, datetime.now().isoformat(), full_name, phone, designation)
     )
     conn.commit()
 
 
-def create_user(username: str, email: str, password: str, role: str = "viewer") -> dict:
+def create_user(username: str, email: str, password: str, role: str = "viewer", full_name: str = "", phone: str = "", designation: str = "") -> dict:
     if role not in ROLES:
         return {"success": False, "message": f"Invalid role. Choose from: {ROLES}"}
     if len(password) < 8:
@@ -160,8 +175,8 @@ def create_user(username: str, email: str, password: str, role: str = "viewer") 
 
     conn = sqlite3.connect(AUTH_DB_PATH)
     try:
-        _create_user_internal(conn, username, email, password, role)
-        return {"success": True, "message": f"User '{username}' created with role '{role}'"}
+        _create_user_internal(conn, username, email, password, role, full_name, phone, designation)
+        return {"success": True, "message": f"User '{username}' created successfully"}
     except sqlite3.IntegrityError as e:
         if "username" in str(e):
             return {"success": False, "message": "Username already exists"}
@@ -173,11 +188,12 @@ def create_user(username: str, email: str, password: str, role: str = "viewer") 
 def list_users() -> list:
     conn = sqlite3.connect(AUTH_DB_PATH)
     c = conn.cursor()
-    c.execute("SELECT id, username, email, role, is_active, created_at, last_login FROM users")
+    c.execute("SELECT id, username, email, role, is_active, created_at, last_login, full_name, phone, designation FROM users")
     rows = c.fetchall()
     conn.close()
     return [{"id": r[0], "username": r[1], "email": r[2], "role": r[3],
-             "is_active": bool(r[4]), "created_at": r[5], "last_login": r[6]} for r in rows]
+             "is_active": bool(r[4]), "created_at": r[5], "last_login": r[6],
+             "full_name": r[7] or "", "phone": r[8] or "", "designation": r[9] or ""} for r in rows]
 
 
 def update_user_role(username: str, new_role: str) -> dict:

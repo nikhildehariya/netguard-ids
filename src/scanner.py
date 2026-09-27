@@ -240,12 +240,14 @@ def arp_scan(subnet: Optional[str] = None, do_ping_sweep: bool = True) -> list[d
     Fast ARP scan — discovers devices on local subnet.
     do_ping_sweep=True: pings all IPs first so ARP table is fully populated.
     """
-    # Always ping sweep first so all active devices appear in ARP table
-    if do_ping_sweep:
-        ping_sweep(subnet)
+    if platform.system().lower() == "windows" and not do_ping_sweep:
+        return _arp_fallback(subnet)
 
     if not SCAPY_OK:
         return _arp_fallback(subnet)
+
+    if do_ping_sweep:
+        ping_sweep(subnet)
 
     target = subnet or _get_local_subnet()
     devices = []
@@ -324,11 +326,6 @@ def _arp_fallback(subnet: Optional[str] = None) -> list[dict]:
                 if mac in ("FF:FF:FF:FF:FF:FF", "00:00:00:00:00:00"):
                     continue
 
-                try:
-                    hostname = socket.gethostbyaddr(ip)[0]
-                except Exception:
-                    hostname = "unknown"
-
                 is_self = ip == local_ip
                 if is_self and local_mac:
                     mac = local_mac
@@ -336,7 +333,7 @@ def _arp_fallback(subnet: Optional[str] = None) -> list[dict]:
                 devices.append({
                     "ip":         ip,
                     "mac":        mac,
-                    "hostname":   hostname,
+                    "hostname":   "unknown",
                     "vendor":     vendor,
                     "status":     "online" if is_self else "seen_recently",
                     "is_gateway": _is_gateway(ip),

@@ -1,17 +1,16 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { LineChart, Line, AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
 
-const API = "http://localhost:8080";
+import { COLORS, SEV_COLOR, Pill, StatCard, SectionTitle, Divider } from "./components/Common";
+import OverviewTab from "./components/OverviewTab";
+import CaptureTab, { RadarPulse } from "./components/CaptureTab";
+import IncidentsTab from "./components/IncidentsTab";
+import ValidateTab from "./components/ValidateTab";
+import BlocklistTab from "./components/BlocklistTab";
+import DevicesTab from "./components/DevicesTab";
+import UsersTab from "./components/UsersTab";
 
-const COLORS = {
-  NORMAL: "#22d3a0",
-  BRUTE_FORCE: "#f97316",
-  DOS_DDOS: "#ef4444",
-  WEB_ATTACK: "#a78bfa",
-  INFILTRATION: "#ec4899",
-};
-
-const SEV_COLOR = { none: "#22d3a0", high: "#f97316", critical: "#ef4444" };
+const API = "http://localhost:8081";
 
 const PRESETS = {
   "DoS GoldenEye": { "Dst Port": 80, "Protocol": 6, "Flow Duration": 6010454, "Tot Fwd Pkts": 4, "Tot Bwd Pkts": 4, "TotLen Fwd Pkts": 285, "TotLen Bwd Pkts": 972, "Fwd Pkt Len Max": 285, "Fwd Pkt Len Min": 0, "Fwd Pkt Len Mean": 71.25, "Fwd Pkt Len Std": 142.5, "Bwd Pkt Len Max": 972, "Bwd Pkt Len Min": 0, "Bwd Pkt Len Mean": 243.0, "Bwd Pkt Len Std": 486.0, "Flow Byts/s": 209.13, "Flow Pkts/s": 1.33, "Flow IAT Mean": 858636.28, "Flow IAT Std": 1865827.78, "Flow IAT Max": 5004855, "Flow IAT Min": 6, "Fwd IAT Tot": 1005599, "Fwd IAT Mean": 335199.66, "Fwd IAT Std": 576060.72, "Fwd IAT Max": 1000372, "Fwd IAT Min": 316, "Bwd IAT Tot": 6010448, "Bwd IAT Mean": 2003482.66, "Bwd IAT Std": 2646706.61, "Bwd IAT Max": 5005181, "Bwd IAT Min": 5229, "Fwd PSH Flags": 0, "Bwd PSH Flags": 0, "Fwd URG Flags": 0, "Bwd URG Flags": 0, "Fwd Header Len": 136, "Bwd Header Len": 136, "Fwd Pkts/s": 0.66, "Bwd Pkts/s": 0.66, "Pkt Len Min": 0, "Pkt Len Max": 972, "Pkt Len Mean": 139.66, "Pkt Len Std": 326.04, "Pkt Len Var": 106306.0, "FIN Flag Cnt": 0, "SYN Flag Cnt": 0, "RST Flag Cnt": 0, "PSH Flag Cnt": 1, "ACK Flag Cnt": 0, "URG Flag Cnt": 0, "CWE Flag Count": 0, "ECE Flag Cnt": 0, "Down/Up Ratio": 1, "Pkt Size Avg": 157.12, "Fwd Seg Size Avg": 71.25, "Bwd Seg Size Avg": 243.0, "Subflow Fwd Pkts": 4, "Subflow Fwd Byts": 285, "Subflow Bwd Pkts": 4, "Subflow Bwd Byts": 972, "Init Fwd Win Byts": 26883, "Init Bwd Win Byts": 219, "Fwd Act Data Pkts": 1, "Fwd Seg Size Min": 32, "Active Mean": 0, "Active Std": 0, "Active Max": 0, "Active Min": 0, "Idle Mean": 0, "Idle Std": 0, "Idle Max": 0, "Idle Min": 0 },
@@ -19,48 +18,9 @@ const PRESETS = {
   "Normal HTTPS": { "Dst Port": 443, "Protocol": 6, "Flow Duration": 100000, "Tot Fwd Pkts": 10, "Tot Bwd Pkts": 10, "Flow Pkts/s": 0.5, "TotLen Fwd Pkts": 0, "TotLen Bwd Pkts": 0, "Fwd Pkt Len Max": 0, "Fwd Pkt Len Min": 0, "Fwd Pkt Len Mean": 0, "Fwd Pkt Len Std": 0, "Bwd Pkt Len Max": 0, "Bwd Pkt Len Min": 0, "Bwd Pkt Len Mean": 0, "Bwd Pkt Len Std": 0, "Flow Byts/s": 0, "Flow IAT Mean": 0, "Flow IAT Std": 0, "Flow IAT Max": 0, "Flow IAT Min": 0, "Fwd IAT Tot": 0, "Fwd IAT Mean": 0, "Fwd IAT Std": 0, "Fwd IAT Max": 0, "Fwd IAT Min": 0, "Bwd IAT Tot": 0, "Bwd IAT Mean": 0, "Bwd IAT Std": 0, "Bwd IAT Max": 0, "Bwd IAT Min": 0, "Fwd PSH Flags": 0, "Bwd PSH Flags": 0, "Fwd URG Flags": 0, "Bwd URG Flags": 0, "Fwd Header Len": 0, "Bwd Header Len": 0, "Fwd Pkts/s": 0, "Bwd Pkts/s": 0, "Pkt Len Min": 0, "Pkt Len Max": 0, "Pkt Len Mean": 0, "Pkt Len Std": 0, "Pkt Len Var": 0, "FIN Flag Cnt": 0, "SYN Flag Cnt": 0, "RST Flag Cnt": 0, "PSH Flag Cnt": 0, "ACK Flag Cnt": 0, "URG Flag Cnt": 0, "CWE Flag Count": 0, "ECE Flag Cnt": 0, "Down/Up Ratio": 0, "Pkt Size Avg": 0, "Fwd Seg Size Avg": 0, "Bwd Seg Size Avg": 0, "Subflow Fwd Pkts": 0, "Subflow Fwd Byts": 0, "Subflow Bwd Pkts": 0, "Subflow Bwd Byts": 0, "Init Fwd Win Byts": 0, "Init Bwd Win Byts": 0, "Fwd Act Data Pkts": 0, "Fwd Seg Size Min": 0, "Active Mean": 0, "Active Std": 0, "Active Max": 0, "Active Min": 0, "Idle Mean": 0, "Idle Std": 0, "Idle Max": 0, "Idle Min": 0 },
 };
 
-// ── Tiny reusable components ──────────────────────────────────
-
-function Pill({ children, color = "#22d3a0" }) {
-  return (
-    <span style={{
-      background: color + "22", color, border: `1px solid ${color}44`,
-      borderRadius: 4, padding: "2px 8px", fontSize: 11, fontWeight: 600,
-      letterSpacing: "0.06em", textTransform: "uppercase", fontFamily: "monospace"
-    }}>{children}</span>
-  );
-}
-
-function StatCard({ label, value, sub, accent }) {
-  return (
-    <div style={{
-      background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.07)",
-      borderRadius: 12, padding: "18px 20px", position: "relative", overflow: "hidden"
-    }}>
-      {accent && <div style={{ position: "absolute", top: 0, left: 0, width: 3, height: "100%", background: accent, borderRadius: "12px 0 0 12px" }} />}
-      <div style={{ fontSize: 11, color: "#64748b", letterSpacing: "0.1em", textTransform: "uppercase", fontWeight: 600, marginBottom: 8 }}>{label}</div>
-      <div style={{ fontSize: 28, fontWeight: 700, color: "#f1f5f9", fontFamily: "monospace", lineHeight: 1 }}>{value}</div>
-      {sub && <div style={{ fontSize: 12, color: "#475569", marginTop: 6 }}>{sub}</div>}
-    </div>
-  );
-}
-
-function SectionTitle({ label, title }) {
-  return (
-    <div style={{ marginBottom: 16 }}>
-      <div style={{ fontSize: 10, color: "#38bdf8", letterSpacing: "0.15em", textTransform: "uppercase", fontWeight: 700, marginBottom: 4 }}>{label}</div>
-      <div style={{ fontSize: 17, fontWeight: 600, color: "#f1f5f9" }}>{title}</div>
-    </div>
-  );
-}
-
-function Divider() {
-  return <div style={{ borderTop: "1px solid rgba(255,255,255,0.05)", margin: "28px 0" }} />;
-}
-
 // ── Login Screen ──────────────────────────────────────────────
 // ── Token Storage ────────────────────────────────────────────
-const TokenStore = {
+export const TokenStore = {
   getAccess:   () => sessionStorage.getItem("ng_access"),
   getRefresh:  () => localStorage.getItem("ng_refresh"),
   getUser:     () => { try { return JSON.parse(sessionStorage.getItem("ng_user") || "null"); } catch { return null; } },
@@ -227,264 +187,6 @@ function AuthScreen({ onLogin }) {
 
 function LoginScreen({ onLogin }) { return <AuthScreen onLogin={onLogin} />; }
 
-// ── Radar animation ───────────────────────────────────────────
-function RadarPulse({ active }) {
-  return (
-    <div style={{ position: "relative", width: 48, height: 48, flexShrink: 0 }}>
-      <div style={{
-        width: 10, height: 10, borderRadius: "50%",
-        background: active ? "#22d3a0" : "#475569",
-        position: "absolute", top: "50%", left: "50%", transform: "translate(-50%,-50%)",
-        boxShadow: active ? "0 0 8px #22d3a0" : "none"
-      }} />
-      {active && [1, 2, 3].map(i => (
-        <div key={i} style={{
-          position: "absolute", top: "50%", left: "50%", transform: "translate(-50%,-50%)",
-          width: 10 + i * 12, height: 10 + i * 12, borderRadius: "50%",
-          border: "1px solid #22d3a0",
-          opacity: 0.15 / i,
-          animation: `pulse-${i} 2s ease-out infinite`,
-          animationDelay: `${i * 0.4}s`
-        }} />
-      ))}
-    </div>
-  );
-}
-
-// ── Users Panel (Admin only) ─────────────────────────────────
-function UsersPanel({ token, currentUser, themeMode }) {
-  const [users, setUsers] = useState([]);
-  const [alertEmail, setAlertEmail] = useState("");
-  const [configuredAlertEmail, setConfiguredAlertEmail] = useState("");
-  const [defaultAdminEmail, setDefaultAdminEmail] = useState("");
-  const [showCreate, setShowCreate] = useState(false);
-  const [form, setForm] = useState({ username: "", email: "", password: "", role: "viewer" });
-  const [msg, setMsg] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [savingAlert, setSavingAlert] = useState(false);
-
-  const authHeaders = { "Content-Type": "application/json", Authorization: `Bearer ${token}` };
-
-  const loadUsers = async () => {
-    const r = await fetch(`${API}/auth/users`, { headers: authHeaders }).catch(() => null);
-    if (r?.ok) { const d = await r.json(); setUsers(d.users || []); }
-  };
-
-  const loadAlertSettings = async () => {
-    const r = await fetch(`${API}/admin/alert-settings`, { headers: authHeaders }).catch(() => null);
-    if (r?.ok) {
-      const d = await r.json();
-      setAlertEmail(d.alert_to_email || "");
-      setConfiguredAlertEmail(d.configured_alert_to_email || "");
-      setDefaultAdminEmail(d.default_admin_email || "");
-    }
-  };
-
-  useEffect(() => {
-    loadUsers();
-    loadAlertSettings();
-  }, []);
-
-  const createUser = async () => {
-    setLoading(true);
-    const r = await fetch(`${API}/auth/users`, { method: "POST", headers: authHeaders, body: JSON.stringify(form) }).catch(() => null);
-    if (r?.ok) { const d = await r.json(); setMsg(d.message); setShowCreate(false); setForm({ username: "", email: "", password: "", role: "viewer" }); loadUsers(); }
-    else { const d = await r?.json(); setMsg(d?.detail || "Failed"); }
-    setLoading(false);
-  };
-
-  const changeRole = async (username, role) => {
-    await fetch(`${API}/auth/users/${username}/role`, { method: "PATCH", headers: authHeaders, body: JSON.stringify({ role }) });
-    loadUsers();
-  };
-
-  const toggleActive = async (username) => {
-    await fetch(`${API}/auth/users/${username}/toggle`, { method: "PATCH", headers: authHeaders });
-    loadUsers();
-  };
-
-  const deleteUser = async (username) => {
-    if (!confirm(`Delete user "${username}"?`)) return;
-    await fetch(`${API}/auth/users/${username}`, { method: "DELETE", headers: authHeaders });
-    loadUsers();
-  };
-
-  const saveAlertRecipient = async () => {
-    setSavingAlert(true);
-    const r = await fetch(`${API}/admin/alert-settings`, {
-      method: "PATCH",
-      headers: authHeaders,
-      body: JSON.stringify({ alert_to_email: alertEmail }),
-    }).catch(() => null);
-    if (r?.ok) {
-      const d = await r.json();
-      setAlertEmail(d.alert_to_email || "");
-      setConfiguredAlertEmail(d.configured_alert_to_email || "");
-      setDefaultAdminEmail(d.default_admin_email || "");
-      setMsg("Alert recipient email updated successfully.");
-    } else {
-      const d = await r?.json();
-      setMsg(d?.detail || "Failed to update alert recipient.");
-    }
-    setSavingAlert(false);
-  };
-
-  const isSoft = themeMode === "soft";
-  const inputStyle = {
-    width: "100%",
-    background: isSoft ? "rgba(255,255,255,0.9)" : "rgba(255,255,255,0.05)",
-    border: isSoft ? "1px solid rgba(148,163,184,0.3)" : "1px solid rgba(255,255,255,0.1)",
-    borderRadius: 8,
-    padding: "10px 12px",
-    color: isSoft ? "#0f172a" : "#f1f5f9",
-    fontSize: 13,
-    outline: "none",
-    marginBottom: 12
-  };
-  const labelStyle = { fontSize: 11, color: isSoft ? "#334155" : "#64748b", textTransform: "uppercase", letterSpacing: "0.08em", display: "block", marginBottom: 6, fontWeight: 600 };
-
-  return (
-    <div style={{ animation: "fadeIn 0.3s ease" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
-        <div>
-          <div style={{ fontSize: 11, color: "#38bdf8", letterSpacing: "0.15em", textTransform: "uppercase", fontWeight: 700, marginBottom: 4 }}>User Management</div>
-          <div className="soft-readable" style={{ fontSize: 18, fontWeight: 700, color: "#f1f5f9" }}>{users.length} Registered Users</div>
-        </div>
-        <button onClick={() => setShowCreate(s => !s)} style={{ background: "linear-gradient(135deg,#0ea5e9,#2563eb)", border: "none", borderRadius: 10, padding: "10px 20px", color: "white", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
-          + Create User
-        </button>
-      </div>
-
-      {msg && <div style={{ background: "rgba(34,211,160,0.1)", border: "1px solid rgba(34,211,160,0.2)", borderRadius: 8, padding: "10px 14px", marginBottom: 16, fontSize: 13, color: "#22d3a0" }}>{msg}</div>}
-
-      <div style={{ background: isSoft ? "rgba(255,255,255,0.55)" : "rgba(10,22,40,0.8)", border: isSoft ? "1px solid rgba(148,163,184,0.25)" : "1px solid rgba(255,255,255,0.08)", borderRadius: 16, padding: "24px", marginBottom: 20 }}>
-        <div style={{ fontSize: 14, fontWeight: 700, color: isSoft ? "#0f172a" : "#f1f5f9", marginBottom: 6 }}>Notification Settings</div>
-        <div style={{ fontSize: 12, color: isSoft ? "#475569" : "#64748b", marginBottom: 16 }}>
-          Security alert emails will be sent to this address.
-        </div>
-        <label style={labelStyle}>Alert Recipient Email</label>
-        <input
-          value={alertEmail}
-          onChange={e => setAlertEmail(e.target.value)}
-          placeholder="admin@example.com"
-          type="email"
-          style={inputStyle}
-        />
-        <div style={{ fontSize: 11, color: isSoft ? "#64748b" : "#475569", marginBottom: 12 }}>
-          {configuredAlertEmail
-            ? `Configured recipient: ${configuredAlertEmail}`
-            : `Fallback (first active admin): ${defaultAdminEmail || "not available"}`}
-        </div>
-        <div style={{ display: "flex", gap: 10 }}>
-          <button
-            onClick={saveAlertRecipient}
-            disabled={savingAlert}
-            style={{
-              padding: "10px 14px",
-              borderRadius: 8,
-              background: "linear-gradient(135deg,#0ea5e9,#2563eb)",
-              border: "none",
-              color: "white",
-              fontSize: 12,
-              fontWeight: 700,
-              cursor: "pointer"
-            }}
-          >
-            {savingAlert ? "Saving..." : "Save Recipient"}
-          </button>
-          <button
-            onClick={loadAlertSettings}
-            style={{
-              padding: "10px 14px",
-              borderRadius: 8,
-              background: "rgba(255,255,255,0.04)",
-              border: "1px solid rgba(255,255,255,0.08)",
-              color: "#94a3b8",
-              fontSize: 12,
-              cursor: "pointer"
-            }}
-          >
-            Reload
-          </button>
-        </div>
-      </div>
-
-      {/* Create User Form */}
-      {showCreate && (
-        <div style={{ background: isSoft ? "rgba(255,255,255,0.55)" : "rgba(10,22,40,0.8)", border: isSoft ? "1px solid rgba(148,163,184,0.25)" : "1px solid rgba(255,255,255,0.08)", borderRadius: 16, padding: "24px", marginBottom: 20 }}>
-          <div style={{ fontSize: 14, fontWeight: 700, color: isSoft ? "#0f172a" : "#f1f5f9", marginBottom: 20 }}>Create New User</div>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-            <div><label style={labelStyle}>Username</label><input value={form.username} onChange={e => setForm(p => ({ ...p, username: e.target.value }))} placeholder="username" style={inputStyle} /></div>
-            <div><label style={labelStyle}>Email</label><input value={form.email} onChange={e => setForm(p => ({ ...p, email: e.target.value }))} placeholder="user@example.com" type="email" style={inputStyle} /></div>
-            <div><label style={labelStyle}>Password</label><input value={form.password} onChange={e => setForm(p => ({ ...p, password: e.target.value }))} placeholder="min 8 chars" type="password" style={inputStyle} /></div>
-            <div>
-              <label style={labelStyle}>Role</label>
-              <select value={form.role} onChange={e => setForm(p => ({ ...p, role: e.target.value }))} style={{ ...inputStyle, colorScheme: "dark" }}>
-                <option value="viewer">Viewer — Read only</option>
-                <option value="analyst">Analyst — Monitor + Block</option>
-                <option value="admin">Admin — Full access</option>
-              </select>
-            </div>
-          </div>
-          <div style={{ display: "flex", gap: 10, marginTop: 4 }}>
-            <button onClick={() => setShowCreate(false)} style={{ flex: 1, padding: "10px", borderRadius: 8, background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)", color: "#64748b", fontSize: 13, cursor: "pointer" }}>Cancel</button>
-            <button onClick={createUser} disabled={loading} style={{ flex: 2, padding: "10px", borderRadius: 8, background: "linear-gradient(135deg,#0ea5e9,#2563eb)", border: "none", color: "white", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
-              {loading ? "Creating..." : "Create User"}
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Users Table */}
-      <div className="users-table" style={{ background: "rgba(10,22,40,0.6)", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 16, overflow: "hidden" }}>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1.5fr 120px 100px 160px", padding: "12px 20px", borderBottom: "1px solid rgba(255,255,255,0.05)", background: "rgba(0,0,0,0.2)" }}>
-          {["USERNAME", "EMAIL", "ROLE", "STATUS", "ACTIONS"].map(h => (
-            <div key={h} style={{ fontSize: 10, fontWeight: 700, color: "#334155", letterSpacing: "0.1em" }}>{h}</div>
-          ))}
-        </div>
-        {users.map((u, i) => (
-          <div key={u.id} style={{ display: "grid", gridTemplateColumns: "1fr 1.5fr 120px 100px 160px", padding: "14px 20px", borderBottom: i < users.length - 1 ? "1px solid rgba(255,255,255,0.04)" : "none", alignItems: "center", background: i % 2 === 0 ? "transparent" : "rgba(255,255,255,0.01)" }}>
-            <div className="users-name" style={{ fontSize: 13, fontWeight: 600, color: "#f1f5f9" }}>
-              {u.username}
-              {u.username === currentUser?.username && <span style={{ fontSize: 10, color: "#38bdf8", marginLeft: 6 }}>(you)</span>}
-            </div>
-            <div style={{ fontSize: 12, color: "#475569", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{u.email}</div>
-            <div>
-              {u.username === "admin" ? (
-                <span style={{ fontSize: 10, fontWeight: 700, color: ROLE_COLORS[u.role], background: ROLE_COLORS[u.role] + "20", borderRadius: 4, padding: "3px 8px", textTransform: "uppercase", letterSpacing: "0.06em" }}>{u.role}</span>
-              ) : (
-                <select value={u.role} onChange={e => changeRole(u.username, e.target.value)} style={{ background: "#0a1628", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 6, padding: "4px 8px", color: ROLE_COLORS[u.role] || "#94a3b8", fontSize: 11, cursor: "pointer", colorScheme: "dark" }}>
-                  <option value="viewer">Viewer</option>
-                  <option value="analyst">Analyst</option>
-                  <option value="admin">Admin</option>
-                </select>
-              )}
-            </div>
-            <div>
-              <span style={{ fontSize: 10, fontWeight: 700, color: u.is_active ? "#22d3a0" : "#ef4444", background: u.is_active ? "rgba(34,211,160,0.1)" : "rgba(239,68,68,0.1)", borderRadius: 4, padding: "3px 8px", textTransform: "uppercase" }}>
-                {u.is_active ? "Active" : "Disabled"}
-              </span>
-            </div>
-            <div style={{ display: "flex", gap: 6 }}>
-              {u.username !== "admin" && u.username !== currentUser?.username && (
-                <>
-                  <button onClick={() => toggleActive(u.username)} style={{ fontSize: 11, padding: "5px 10px", borderRadius: 6, background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)", color: "#94a3b8", cursor: "pointer" }}>
-                    {u.is_active ? "Disable" : "Enable"}
-                  </button>
-                  <button onClick={() => deleteUser(u.username)} style={{ fontSize: 11, padding: "5px 10px", borderRadius: 6, background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.2)", color: "#f87171", cursor: "pointer" }}>
-                    Delete
-                  </button>
-                </>
-              )}
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-
 // ── Main Dashboard ────────────────────────────────────────────
 export default function App() {
   const [auth, setAuth] = useState(false);
@@ -516,6 +218,9 @@ export default function App() {
   const [valResult, setValResult] = useState(null);
   const [valLoading, setValLoading] = useState(false);
   const [toast, setToast] = useState(null);
+  const [license, setLicense] = useState({ status: "active", client: "", expires_at: "" });
+  const [licenseInput, setLicenseInput] = useState("");
+  const [licensingError, setLicensingError] = useState("");
   const [activeTab, setActiveTab] = useState("overview");
   const [themeMode, setThemeMode] = useState(() => localStorage.getItem("ng_theme") || "dark");
   const [pdfBytes, setPdfBytes] = useState(null);
@@ -529,6 +234,49 @@ export default function App() {
   const showToast = (msg, type = "success") => {
     setToast({ msg, type });
     setTimeout(() => setToast(null), 3000);
+  };
+
+  const handleLogout = useCallback(() => {
+    const rt = TokenStore.getRefresh();
+    if (rt) fetch(`${API}/auth/logout`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ refresh_token: rt }) }).catch(() => {});
+    TokenStore.clear();
+    setAuth(false);
+    setCurrentUser(null);
+  }, []);
+
+  const fetchLicenseStatus = useCallback(async () => {
+    try {
+      const res = await fetch(`${API}/api/license/status`).then(r => r.json());
+      setLicense(res || { status: "active" });
+    } catch {
+      // Offline fallback
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchLicenseStatus();
+  }, [fetchLicenseStatus]);
+
+  const handleActivateLicense = async () => {
+    if (!licenseInput.trim()) return;
+    try {
+      const r = await fetch(`${API}/api/license/activate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ key: licenseInput })
+      });
+      const res = await r.json();
+      if (r.ok) {
+        showToast("License activated successfully!");
+        setLicense({ status: "active", client: res.client, expires_at: res.expires_at });
+        setLicenseInput("");
+        setLicensingError("");
+      } else {
+        setLicensingError(res.detail || "Invalid license key");
+      }
+    } catch {
+      setLicensingError("Failed to communicate with licensing server");
+    }
   };
 
   const toggleTheme = () => {
@@ -546,12 +294,20 @@ export default function App() {
     try {
       const token = TokenStore.getAccess();
       const authH = { Authorization: `Bearer ${token}` };
+
+      const checkAuth = async (res) => {
+        if (res.status === 401 || res.status === 403) {
+          throw new Error("UNAUTHORIZED");
+        }
+        return res.json();
+      };
+
       const [hRes, sRes, cRes, bRes, iRes] = await Promise.all([
-        fetch(`${API}/history?limit=1000`, { headers: authH }).then(r => r.json()).catch(() => []),
-        fetch(`${API}/stats`, { headers: authH }).then(r => r.json()).catch(() => ({})),
-        fetch(`${API}/capture/status`, { headers: authH }).then(r => r.json()).catch(() => ({})),
-        fetch(`${API}/blocked-ips`, { headers: authH }).then(r => r.json()).catch(() => ({ items: [] })),
-        fetch(`${API}/capture/interfaces`, { headers: authH }).then(r => r.json()).catch(() => ({ interfaces: [] })),
+        fetch(`${API}/history?limit=1000`, { headers: authH }).then(checkAuth).catch(e => { if (e.message === "UNAUTHORIZED") throw e; return []; }),
+        fetch(`${API}/stats`, { headers: authH }).then(checkAuth).catch(e => { if (e.message === "UNAUTHORIZED") throw e; return {}; }),
+        fetch(`${API}/capture/status`, { headers: authH }).then(checkAuth).catch(e => { if (e.message === "UNAUTHORIZED") throw e; return {}; }),
+        fetch(`${API}/blocked-ips`, { headers: authH }).then(checkAuth).catch(e => { if (e.message === "UNAUTHORIZED") throw e; return { items: [] }; }),
+        fetch(`${API}/capture/interfaces`, { headers: authH }).then(checkAuth).catch(e => { if (e.message === "UNAUTHORIZED") throw e; return { interfaces: [] }; }),
       ]);
       setApiOnline(true);
       setHistory(Array.isArray(hRes) ? hRes : []);
@@ -561,11 +317,33 @@ export default function App() {
       setBlockedIPs(bRes?.items || []);
       const ifaces = (iRes?.interfaces || []).map(i => typeof i === "string" ? { id: i, label: i } : i);
       setInterfaces(ifaces);
-      if (ifaces.length && !selectedIface) setSelectedIface(ifaces[0].id);
-    } catch {
-      setApiOnline(false);
+      if (ifaces.length && !selectedIface) {
+        if (captureMode === "wifi") {
+          const wifi = ifaces.find(i => 
+            (i.name && i.name.toLowerCase().includes("wi-fi")) || 
+            (i.description && i.description.toLowerCase().includes("wi-fi")) ||
+            (i.name && i.name.toLowerCase().includes("wireless")) ||
+            (i.description && i.description.toLowerCase().includes("wireless"))
+          );
+          if (wifi) setSelectedIface(wifi.id);
+          else setSelectedIface(ifaces[0].id);
+        } else if (captureMode === "span") {
+          setSelectedIface(SPAN_GUID);
+        } else {
+          const active = ifaces.find(i => i.ips && i.ips.length && i.ips.some(ip => !ip.startsWith("127.") && !ip.startsWith("169.254")));
+          if (active) setSelectedIface(active.id);
+          else setSelectedIface(ifaces[0].id);
+        }
+      }
+    } catch (e) {
+      if (e.message === "UNAUTHORIZED") {
+        handleLogout();
+        showToast("Session expired or key changed. Please sign in again.", "error");
+      } else {
+        setApiOnline(false);
+      }
     }
-  }, [selectedIface]);
+  }, [selectedIface, handleLogout]);
 
   useEffect(() => {
     if (!auth) return;
@@ -588,15 +366,33 @@ export default function App() {
   const bc = stats.by_class || {};
   const attacks = history.filter(r => r.prediction !== "NORMAL");
   const timelineData = (() => {
-    if (!history.length) return [];
-    const buckets = {};
+    const buckets = [];
+    const now = new Date();
+    // Generate 10 rolling minute buckets up to current time
+    for (let i = 9; i >= 0; i--) {
+      const d = new Date(now.getTime() - i * 60 * 1000);
+      const timeStr = `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+      buckets.push({
+        time: timeStr,
+        minuteKey: `${d.getFullYear()}-${d.getMonth()}-${d.getDate()} ${d.getHours()}:${d.getMinutes()}`,
+        NORMAL: 0,
+        BRUTE_FORCE: 0,
+        DOS_DDOS: 0,
+        WEB_ATTACK: 0,
+        INFILTRATION: 0
+      });
+    }
+
     history.forEach(r => {
       const t = new Date(r.timestamp);
-      const key = `${t.getHours()}:${String(t.getMinutes()).padStart(2, "0")}`;
-      if (!buckets[key]) buckets[key] = { time: key, NORMAL: 0, BRUTE_FORCE: 0, DOS_DDOS: 0, WEB_ATTACK: 0, INFILTRATION: 0 };
-      buckets[key][r.prediction] = (buckets[key][r.prediction] || 0) + 1;
+      const minuteKey = `${t.getFullYear()}-${t.getMonth()}-${t.getDate()} ${t.getHours()}:${t.getMinutes()}`;
+      const bucket = buckets.find(b => b.minuteKey === minuteKey);
+      if (bucket) {
+        bucket[r.prediction] = (bucket[r.prediction] || 0) + 1;
+      }
     });
-    return Object.values(buckets).slice(-20);
+
+    return buckets.map(({ minuteKey, ...rest }) => rest);
   })();
 
   const pieData = Object.entries(bc).map(([name, value]) => ({ name, value }));
@@ -642,17 +438,51 @@ export default function App() {
   const runValidation = async () => {
     setValLoading(true); setValResult(null);
     try {
-      const r = await fetch(`${API}/predict`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...PRESETS[valPreset], test_mode: true }) }).then(x => x.json());
-      setValResult(r);
-    } catch { showToast("API unreachable", "error"); }
+      const token = TokenStore.getAccess();
+      const r = await fetch(`${API}/predict`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`
+        },
+        body: JSON.stringify({ ...PRESETS[valPreset], test_mode: true })
+      }).then(x => x.json());
+
+      if (r.detail) {
+        showToast(r.detail, "error");
+        setValResult(null);
+      } else {
+        setValResult(r);
+        fetchAll();
+      }
+    } catch {
+      showToast("API unreachable", "error");
+    }
     setValLoading(false);
   };
 
   const handleCaptureMode = (mode) => {
     setCaptureMode(mode);
-    if (mode === "wifi") setSelectedIface(WIFI_GUID);
-    else if (mode === "span") setSelectedIface(SPAN_GUID);
-    // manual: let user pick from dropdown
+    if (mode === "wifi") {
+      const wifiAdapter = interfaces.find(i => 
+        (i.name && i.name.toLowerCase().includes("wi-fi")) || 
+        (i.description && i.description.toLowerCase().includes("wi-fi")) ||
+        (i.name && i.name.toLowerCase().includes("wireless")) ||
+        (i.description && i.description.toLowerCase().includes("wireless"))
+      );
+      if (wifiAdapter) {
+        setSelectedIface(wifiAdapter.id);
+        showToast("Auto-detected Wi-Fi: " + (wifiAdapter.name || "Interface"));
+      } else {
+        setSelectedIface(WIFI_GUID);
+      }
+    } else if (mode === "span") {
+      setSelectedIface(SPAN_GUID);
+    } else if (mode === "manual") {
+      const active = interfaces.find(i => i.ips && i.ips.length && i.ips.some(ip => !ip.startsWith("127.") && !ip.startsWith("169.254")));
+      if (active) setSelectedIface(active.id);
+      else if (interfaces.length) setSelectedIface(interfaces[0].id);
+    }
   };
 
   const generateReport = async () => {
@@ -675,6 +505,53 @@ export default function App() {
       }
     } catch { showToast("Report failed", "error"); }
   };
+
+  if (license.status === "expired") {
+    return (
+      <div style={{ minHeight: "100vh", background: "linear-gradient(135deg, #090514 0%, #030107 100%)", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'Space Grotesk', system-ui, sans-serif", color: "#e2e8f0", padding: 20 }}>
+        <div style={{ width: 480, background: "rgba(20,10,35,0.7)", border: "1px solid rgba(239,68,68,0.25)", borderRadius: 24, padding: 40, backdropFilter: "blur(20px)", boxShadow: "0 20px 50px rgba(0,0,0,0.6), 0 0 40px rgba(239,68,68,0.05)", textAlign: "center" }}>
+          
+          {/* Warning Icon */}
+          <div style={{ width: 72, height: 72, borderRadius: "50%", background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.3)", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 24px", color: "#ef4444", fontSize: 32 }}>
+            ⚠️
+          </div>
+
+          <h2 style={{ fontSize: 24, fontWeight: 700, color: "#f87171", marginBottom: 12 }}>NetGuard Threat Protection Suspended</h2>
+          
+          <p style={{ fontSize: 14, color: "#94a3b8", lineHeight: "1.5em", marginBottom: 24 }}>
+            Your NetGuard subscription/license has expired or is invalid. Active packet sniffing, intrusion detection alerts, and automatic firewalls are currently locked.
+          </p>
+
+          <div style={{ background: "rgba(0,0,0,0.2)", borderRadius: 12, padding: 16, marginBottom: 28, border: "1px solid rgba(255,255,255,0.03)" }}>
+            <div style={{ fontSize: 11, color: "#475569", textTransform: "uppercase", letterSpacing: "0.1em", fontWeight: 700, marginBottom: 4 }}>Reason</div>
+            <div style={{ fontSize: 13, color: "#f87171", fontWeight: 500 }}>{license.message || "License Expired"}</div>
+            
+            <div style={{ height: 1, background: "rgba(255,255,255,0.05)", margin: "12px 0" }} />
+            
+            <div style={{ fontSize: 11, color: "#475569", textTransform: "uppercase", letterSpacing: "0.1em", fontWeight: 700, marginBottom: 4 }}>Contact Security Provider</div>
+            <div style={{ fontSize: 13, color: "#38bdf8", fontWeight: 600 }}>Nikhil Dehariya</div>
+            <div style={{ fontSize: 11, color: "#64748b", marginTop: 2 }}>Email: nikhil@netguard.com</div>
+          </div>
+
+          {/* License input */}
+          <div style={{ textAlign: "left", marginBottom: 16 }}>
+            <label style={{ fontSize: 11, color: "#64748b", letterSpacing: "0.1em", textTransform: "uppercase", display: "block", marginBottom: 8, fontWeight: 600 }}>Enter Activation License Key</label>
+            <input type="text" value={licenseInput} onChange={e => setLicenseInput(e.target.value)} placeholder="NETGUARD-YYYYMMDD-XXXXXX" style={{ width: "100%", background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 10, padding: "12px 14px", color: "#f1f5f9", fontSize: 14, outline: "none", fontFamily: "monospace" }} />
+          </div>
+
+          {licensingError && (
+            <div style={{ color: "#ef4444", fontSize: 12, marginBottom: 16, background: "rgba(239,68,68,0.08)", padding: "8px 12px", borderRadius: 8, border: "1px solid rgba(239,68,68,0.15)" }}>
+              ❌ {licensingError}
+            </div>
+          )}
+
+          <button onClick={handleActivateLicense} style={{ width: "100%", background: "linear-gradient(135deg, #ef4444, #b91c1c)", border: "none", borderRadius: 12, padding: "14px", color: "white", fontSize: 14, fontWeight: 700, cursor: "pointer", boxShadow: "0 4px 20px rgba(239,68,68,0.2)" }}>
+            Activate License Key →
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   if (!auth) return <LoginScreen onLogin={(user) => { setCurrentUser(user); setAuth(true); }} />;
 
@@ -719,8 +596,71 @@ export default function App() {
         .dark-input { background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; padding: 10px 14px; color: #f1f5f9; font-size: 13px; outline: none; width: 100%; transition: border-color 0.15s; }
         .dark-input:focus { border-color: rgba(56,189,248,0.4); }
 
+        .nav-btn {
+          width: 100%; display: flex; align-items: center; gap: 10px; padding: 10px 14px;
+          border-radius: 0 10px 10px 0; border: none; background: none;
+          color: #64748b; font-size: 13px; font-weight: 600;
+          margin-bottom: 4px; transition: all 0.2s ease; text-align: left;
+          border-left: 3px solid transparent;
+        }
+        .nav-btn:hover {
+          color: #94a3b8;
+          background: rgba(255, 255, 255, 0.02);
+        }
+        .nav-btn.active {
+          border-left: 3px solid #38bdf8;
+          background: linear-gradient(90deg, rgba(56,189,248,0.1) 0%, rgba(56,189,248,0) 100%);
+          color: #38bdf8;
+          text-shadow: 0 0 8px rgba(56,189,248,0.4);
+        }
+
+        .mode-btn {
+          flex: 1; padding: 10px 8px; border-radius: 10px; cursor: pointer;
+          background: rgba(255, 255, 255, 0.03);
+          border: 1px solid rgba(255, 255, 255, 0.07);
+          transition: all 0.15s; text-align: center;
+        }
+        .mode-btn:hover {
+          background: rgba(255, 255, 255, 0.06);
+          border-color: rgba(255, 255, 255, 0.12);
+        }
+        .mode-btn.active {
+          background: rgba(14, 165, 233, 0.15);
+          border-color: rgba(14, 165, 233, 0.5);
+        }
+        .mode-btn .title {
+          font-size: 12px; font-weight: 700; color: #94a3b8;
+        }
+        .mode-btn .desc {
+          font-size: 10px; color: #475569; margin-top: 2px;
+        }
+        .mode-btn.active .title {
+          color: #38bdf8;
+        }
+        .mode-btn.active .desc {
+          color: #0ea5e9;
+        }
+
 select { color-scheme: dark; } select.dark-input { background: #0a1628 !important; color: #f1f5f9 !important; } select.dark-input option { background: #0a1628 !important; color: #f1f5f9 !important; }
-        .panel { background: rgba(255,255,255,0.025); border: 1px solid rgba(255,255,255,0.06); border-radius: 14px; padding: 20px 22px; }
+        .panel {
+          background: rgba(10,22,45,0.3);
+          border: 1px solid rgba(255,255,255,0.05);
+          border-radius: 16px;
+          padding: 24px;
+          box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+          backdrop-filter: blur(10px);
+          transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .panel:hover {
+          border-color: rgba(255,255,255,0.08);
+          box-shadow: 0 15px 40px rgba(0,0,0,0.4);
+        }
+        .glow-card:hover {
+          transform: translateY(-3px);
+          background: rgba(14,165,233,0.04) !important;
+          border-color: rgba(14,165,233,0.3) !important;
+          box-shadow: 0 12px 30px rgba(0,0,0,0.5), 0 0 20px rgba(14,165,233,0.08) !important;
+        }
         .theme-soft {
           background: #eaf2fb !important;
           color: #132033 !important;
@@ -801,11 +741,42 @@ select { color-scheme: dark; } select.dark-input { background: #0a1628 !importan
           color: #132033 !important;
           opacity: 1 !important;
         }
-        .theme-soft nav button {
-          color: #334155 !important;
+        .theme-soft .nav-btn {
+          color: #475569 !important;
         }
-        .theme-soft nav button[style*="rgba(56,189,248,0.1)"] {
+        .theme-soft .nav-btn:hover {
+          background: rgba(15, 23, 42, 0.04) !important;
+          color: #1e293b !important;
+        }
+        .theme-soft .nav-btn.active {
+          border-left-color: #0284c7 !important;
+          background: linear-gradient(90deg, rgba(14,165,233,0.12) 0%, rgba(14,165,233,0) 100%) !important;
           color: #0284c7 !important;
+          text-shadow: none !important;
+        }
+
+        .theme-soft .mode-btn {
+          background: #ffffff !important;
+          border-color: rgba(15, 23, 42, 0.12) !important;
+        }
+        .theme-soft .mode-btn:hover {
+          background: #f1f5f9 !important;
+        }
+        .theme-soft .mode-btn.active {
+          background: #dff3ff !important;
+          border-color: rgba(14, 165, 233, 0.4) !important;
+        }
+        .theme-soft .mode-btn .title {
+          color: #475569 !important;
+        }
+        .theme-soft .mode-btn .desc {
+          color: #64748b !important;
+        }
+        .theme-soft .mode-btn.active .title {
+          color: #0284c7 !important;
+        }
+        .theme-soft .mode-btn.active .desc {
+          color: #0369a1 !important;
         }
         .theme-soft [style*="font-size: 28"],
         .theme-soft [style*="fontSize: 28"],
@@ -984,12 +955,7 @@ select { color-scheme: dark; } select.dark-input { background: #0a1628 !importan
             { id: "devices", icon: "M9 3H5a2 2 0 00-2 2v4m6-6h10a2 2 0 012 2v4M9 3v18m0 0h10a2 2 0 002-2V9M9 21H5a2 2 0 01-2-2V9m0 0h18", label: "Devices" },
             ...(currentUser?.role === "admin" ? [{ id: "users", icon: "M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z", label: "Users" }] : []),
           ].map(({ id, icon, label }) => (
-            <button key={id} onClick={() => setActiveTab(id)} style={{
-              width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "9px 12px",
-              borderRadius: 8, border: "none", background: activeTab === id ? "rgba(56,189,248,0.1)" : "none",
-              color: activeTab === id ? "#38bdf8" : "#475569", fontSize: 13, fontWeight: 500,
-              marginBottom: 2, transition: "all 0.15s", textAlign: "left"
-            }}>
+            <button key={id} onClick={() => setActiveTab(id)} className={`nav-btn ${activeTab === id ? "active" : ""}`}>
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <path d={icon} />
               </svg>
@@ -1068,530 +1034,79 @@ select { color-scheme: dark; } select.dark-input { background: #0a1628 !importan
           </div>
         </div>
 
-        {/* ── OVERVIEW TAB ── */}
+        {/* ── TABS RENDERING ── */}
         {activeTab === "overview" && (
-          <div style={{ animation: "fadeIn 0.3s ease" }}>
-            {/* Metrics */}
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: 12, marginBottom: 24 }}>
-              <StatCard label="Total Events" value={(stats.total || 0).toLocaleString()} accent="#38bdf8" />
-              <StatCard label="Attack Rate" value={`${(stats.attack_rate || 0).toFixed(1)}%`} accent="#f97316" />
-              <StatCard label="DoS / DDoS" value={bc.DOS_DDOS || 0} accent="#ef4444" />
-              <StatCard label="Brute Force" value={bc.BRUTE_FORCE || 0} accent="#f97316" />
-              <StatCard label="Web Attacks" value={bc.WEB_ATTACK || 0} accent="#a78bfa" />
-              <StatCard label="Infiltration" value={bc.INFILTRATION || 0} accent="#ec4899" />
-            </div>
-
-            {/* Charts row */}
-            <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 16, marginBottom: 16 }}>
-              <div className="panel">
-                <SectionTitle label="Traffic Analytics" title="Live Timeline" />
-                <ResponsiveContainer width="100%" height={220}>
-                  <AreaChart data={timelineData}>
-                    <defs>
-                      {Object.entries(COLORS).map(([k, c]) => (
-                        <linearGradient key={k} id={`g-${k}`} x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor={c} stopOpacity={0.3} />
-                          <stop offset="95%" stopColor={c} stopOpacity={0} />
-                        </linearGradient>
-                      ))}
-                    </defs>
-                    <XAxis dataKey="time" tick={{ fill: "#334155", fontSize: 10 }} axisLine={false} tickLine={false} />
-                    <YAxis tick={{ fill: "#334155", fontSize: 10 }} axisLine={false} tickLine={false} />
-                    <Tooltip contentStyle={{ background: "#0a1628", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, fontSize: 12 }} />
-                    {Object.entries(COLORS).map(([k, c]) => (
-                      <Area key={k} type="monotone" dataKey={k} stroke={c} strokeWidth={1.5} fill={`url(#g-${k})`} dot={false} />
-                    ))}
-                  </AreaChart>
-                </ResponsiveContainer>
-              </div>
-
-              <div className="panel" style={{ display: "flex", flexDirection: "column" }}>
-                <SectionTitle label="Distribution" title="By Class" />
-                <div style={{ flex: 1, display: "flex", alignItems: "center" }}>
-                  <ResponsiveContainer width="100%" height={200}>
-                    <PieChart>
-                      <Pie data={pieData.length ? pieData : [{ name: "NORMAL", value: 1 }]}
-                        cx="50%" cy="50%" innerRadius={55} outerRadius={80} dataKey="value" stroke="none">
-                        {(pieData.length ? pieData : [{ name: "NORMAL" }]).map((e, i) => (
-                          <Cell key={i} fill={COLORS[e.name] || "#334155"} />
-                        ))}
-                      </Pie>
-                      <Tooltip contentStyle={{ background: "#0a1628", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, fontSize: 12 }} />
-                    </PieChart>
-                  </ResponsiveContainer>
-                </div>
-                <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 8 }}>
-                  {Object.entries(COLORS).map(([k, c]) => (
-                    <div key={k} style={{ display: "flex", alignItems: "center", gap: 5 }}>
-                      <div style={{ width: 6, height: 6, borderRadius: "50%", background: c }} />
-                      <span style={{ fontSize: 10, color: "#475569" }}>{k.replace("_", " ")}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            {/* Recent attacks */}
-            <div className="panel">
-              <SectionTitle label="Incident Feed" title="Recent Attack Events" />
-              {attacks.length === 0 ? (
-                <div style={{ color: "#22d3a0", fontSize: 13, padding: "12px 0" }}>✓ Network is clean — no attacks detected</div>
-              ) : (
-                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                  {attacks.slice(0, 8).map((r, i) => (
-                    <div key={i} style={{
-                      display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 14px",
-                      background: "rgba(255,255,255,0.02)", borderRadius: 8,
-                      borderLeft: `3px solid ${SEV_COLOR[r.severity] || "#475569"}`
-                    }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                        <Pill color={COLORS[r.prediction]}>{r.prediction?.replace("_", " ")}</Pill>
-                        <span style={{ fontSize: 12, color: "#64748b" }}>{r.source_ip || "unknown"}</span>
-                      </div>
-                      <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
-                        <span style={{ fontSize: 12, color: SEV_COLOR[r.severity], fontFamily: "monospace" }}>{(r.confidence * 100).toFixed(1)}%</span>
-                        <span style={{ fontSize: 11, color: "#334155", fontFamily: "monospace" }}>{String(r.timestamp || "").slice(11, 19)}</span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
+          <OverviewTab stats={stats} bc={bc} timelineData={timelineData} pieData={pieData} attacks={attacks} />
         )}
-
-        {/* ── CAPTURE TAB ── */}
         {activeTab === "capture" && (
-          <div style={{ animation: "fadeIn 0.3s ease", maxWidth: 700 }}>
-            <div className="panel" style={{ marginBottom: 16 }}>
-              <SectionTitle label="Live Capture" title="Capture Mode" />
-
-              {/* Mode Selector */}
-              <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
-                {[
-                  { key: "wifi", label: "📶 WiFi Monitor", desc: "Killer Wi-Fi 6E" },
-                  { key: "span", label: "🔌 SPAN / Ethernet", desc: "Switch mirror port" },
-                  { key: "manual", label: "⚙️ Manual", desc: "Choose interface" },
-                ].map(({ key, label, desc }) => (
-                  <button key={key} onClick={() => handleCaptureMode(key)} style={{
-                    flex: 1, padding: "10px 8px", borderRadius: 10, cursor: "pointer",
-                    background: captureMode === key ? "rgba(14,165,233,0.15)" : "rgba(255,255,255,0.03)",
-                    border: captureMode === key ? "1px solid rgba(14,165,233,0.5)" : "1px solid rgba(255,255,255,0.07)",
-                    transition: "all 0.15s", textAlign: "center"
-                  }}>
-                    <div style={{ fontSize: 12, fontWeight: 700, color: captureMode === key ? "#38bdf8" : "#64748b" }}>{label}</div>
-                    <div style={{ fontSize: 10, color: captureMode === key ? "#0ea5e9" : "#334155", marginTop: 2 }}>{desc}</div>
-                  </button>
-                ))}
-              </div>
-
-              {/* SPAN not configured warning */}
-              {captureMode === "span" && selectedIface === "SPAN_GUID_PLACEHOLDER" && (
-                <div style={{ background: "rgba(249,115,22,0.08)", border: "1px solid rgba(249,115,22,0.2)", borderRadius: 8, padding: "10px 14px", marginBottom: 12, fontSize: 12, color: "#f97316" }}>
-                  ⚠️ SPAN GUID not configured yet — update <code style={{ color: "#fbbf24" }}>SPAN_GUID</code> in App.jsx at college
-                </div>
-              )}
-
-              {/* Interface dropdown — only in manual mode */}
-              <div style={{ display: "flex", gap: 12, marginBottom: 16 }}>
-                {captureMode === "manual" ? (
-                  <select value={selectedIface} onChange={e => setSelectedIface(e.target.value)}
-                    className="dark-input" style={{ flex: 1 }}>
-                    {interfaces.map(i => (
-                      <option key={i.id} value={i.id}>{i.label || i.id}</option>
-                    ))}
-                  </select>
-                ) : (
-                  <div style={{ flex: 1, background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 8, padding: "10px 14px", fontSize: 12, color: "#475569", fontFamily: "monospace", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                    {selectedIface || "No interface selected"}
-                  </div>
-                )}
-                <button onClick={toggleCapture}
-                  className={captureRunning ? "danger-btn" : "success-btn"}
-                  style={{ flexShrink: 0, padding: "10px 24px" }}>
-                  {captureRunning ? "⏹ Stop" : "▶ Start"}
-                </button>
-              </div>
-
-              <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "14px 16px", background: "rgba(255,255,255,0.02)", borderRadius: 10 }}>
-                <RadarPulse active={captureRunning} />
-                <div>
-                  <div style={{ fontSize: 14, fontWeight: 600, color: captureRunning ? "#22d3a0" : "#475569" }}>
-                    {captureRunning ? "Capture Active" : "Capture Stopped"}
-                  </div>
-                  {captureLog && <div style={{ fontSize: 11, color: "#334155", marginTop: 4, fontFamily: "monospace" }}>{captureLog.split("\n").slice(-1)[0]}</div>}
-                </div>
-              </div>
-            </div>
-
-            <div className="panel">
-              <SectionTitle label="Statistics" title="Session Summary" />
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
-                <StatCard label="Flows Analyzed" value={(stats.total || 0).toLocaleString()} />
-                <StatCard label="Attacks Detected" value={attacks.length} accent="#ef4444" />
-                <StatCard label="Attack Rate" value={`${(stats.attack_rate || 0).toFixed(1)}%`} accent="#f97316" />
-              </div>
-            </div>
-          </div>
+          <CaptureTab
+            captureMode={captureMode}
+            handleCaptureMode={handleCaptureMode}
+            selectedIface={selectedIface}
+            setSelectedIface={setSelectedIface}
+            interfaces={interfaces}
+            toggleCapture={toggleCapture}
+            captureRunning={captureRunning}
+            captureLog={captureLog}
+            stats={stats}
+            attacks={attacks}
+          />
         )}
-
-        {/* ── INCIDENTS TAB ── */}
         {activeTab === "incidents" && (
-          <div style={{ animation: "fadeIn 0.3s ease" }}>
-            <div className="panel">
-              <SectionTitle label="Incident Feed" title={`All Attack Events (${attacks.length})`} />
-              {attacks.length === 0 ? (
-                <div style={{ color: "#22d3a0", fontSize: 13, padding: "20px 0", textAlign: "center" }}>✓ No attacks detected — network is clean</div>
-              ) : (
-                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                  {attacks.map((r, i) => (
-                    <div key={i} style={{
-                      display: "grid", gridTemplateColumns: "1fr 1fr 80px 80px 120px 100px", gap: 12,
-                      padding: "11px 14px", background: "rgba(255,255,255,0.02)", borderRadius: 8,
-                      borderLeft: `3px solid ${SEV_COLOR[r.severity] || "#475569"}`, alignItems: "center"
-                    }}>
-                      <Pill color={COLORS[r.prediction]}>{r.prediction?.replace("_", " ")}</Pill>
-                      <span style={{ fontSize: 12, color: "#64748b", fontFamily: "monospace" }}>{r.source_ip || "—"}</span>
-                      <span style={{ fontSize: 12, color: SEV_COLOR[r.severity], fontFamily: "monospace", fontWeight: 600 }}>{(r.confidence * 100).toFixed(1)}%</span>
-                      <Pill color={SEV_COLOR[r.severity]}>{r.severity?.toUpperCase()}</Pill>
-                      <span style={{ fontSize: 11, color: "#334155", fontFamily: "monospace" }}>{String(r.timestamp || "").slice(0, 19).replace("T", " ")}</span>
-                      {(currentUser?.role === "admin" || currentUser?.role === "analyst") && r.source_ip && r.source_ip !== "unknown" ? (
-                        <button onClick={async () => {
-                          const token = TokenStore.getAccess();
-                          const res = await fetch(`${API}/blocked-ips`, {
-                            method: "POST",
-                            headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-                            body: JSON.stringify({ ip: r.source_ip, reason: `Auto-block: ${r.prediction} detected (${(r.confidence*100).toFixed(1)}%)`, layer: "firewall" })
-                          }).then(x => x.json()).catch(() => ({}));
-                          showToast(res.message || res.detail || "Done");
-                          fetchAll();
-                        }} style={{
-                          fontSize: 11, padding: "5px 10px", borderRadius: 6, cursor: "pointer", fontWeight: 700,
-                          background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.3)",
-                          color: "#f87171", transition: "all 0.15s"
-                        }}>🚫 Block IP</button>
-                      ) : <span />}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
+          <IncidentsTab
+            attacks={attacks}
+            currentUser={currentUser}
+            API={API}
+            showToast={showToast}
+            fetchAll={fetchAll}
+          />
         )}
-
-        {/* ── VALIDATE TAB ── */}
         {activeTab === "validate" && (
-          <div style={{ animation: "fadeIn 0.3s ease", maxWidth: 700 }}>
-            <div className="panel">
-              <SectionTitle label="Classifier Validation" title="Run Preset Attack" />
-              <div style={{ display: "flex", gap: 12, marginBottom: 20 }}>
-                <select value={valPreset} onChange={e => setValPreset(e.target.value)} className="dark-input" style={{ flex: 1 }}>
-                  {Object.keys(PRESETS).map(k => <option key={k} value={k}>{k}</option>)}
-                </select>
-                <button onClick={runValidation} disabled={valLoading} className="action-btn" style={{ flexShrink: 0, padding: "10px 24px" }}>
-                  {valLoading ? "Running..." : "⚡ Run"}
-                </button>
-              </div>
-
-              <div style={{ fontSize: 12, color: "#334155", fontFamily: "monospace", marginBottom: valResult ? 20 : 0 }}>
-                Fields: {Object.keys(PRESETS[valPreset]).length} · Test mode: enabled
-              </div>
-
-              {valResult && (
-                <div style={{ marginTop: 20 }}>
-                  <div style={{
-                    padding: "14px 18px", borderRadius: 10, marginBottom: 20,
-                    background: `${SEV_COLOR[valResult.severity] || "#22d3a0"}18`,
-                    border: `1px solid ${SEV_COLOR[valResult.severity] || "#22d3a0"}44`
-                  }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                      <Pill color={COLORS[valResult.prediction] || "#22d3a0"}>{valResult.prediction?.replace("_", " ")}</Pill>
-                      <span style={{ fontSize: 13, color: "#94a3b8" }}>
-                        Confidence: <strong style={{ color: "#f1f5f9", fontFamily: "monospace" }}>{((valResult.confidence || 0) * 100).toFixed(1)}%</strong>
-                      </span>
-                      <Pill color={SEV_COLOR[valResult.severity]}>{valResult.severity?.toUpperCase()}</Pill>
-                    </div>
-                  </div>
-
-                  <div style={{ fontSize: 11, color: "#475569", letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 12 }}>Score Breakdown</div>
-                  {Object.entries(valResult.all_scores || {}).map(([label, score]) => (
-                    <div key={label} style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 10 }}>
-                      <div style={{ width: 120, fontSize: 12, color: "#64748b" }}>{label.replace("_", " ")}</div>
-                      <div style={{ flex: 1, background: "rgba(255,255,255,0.06)", borderRadius: 4, height: 6 }}>
-                        <div style={{ width: `${score * 100}%`, background: COLORS[label] || "#475569", height: 6, borderRadius: 4, transition: "width 0.5s ease" }} />
-                      </div>
-                      <div style={{ width: 48, textAlign: "right", fontSize: 12, color: COLORS[label] || "#475569", fontFamily: "monospace" }}>
-                        {(score * 100).toFixed(1)}%
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
+          <ValidateTab
+            valPreset={valPreset}
+            setValPreset={setValPreset}
+            PRESETS={PRESETS}
+            runValidation={runValidation}
+            valLoading={valLoading}
+            valResult={valResult}
+          />
         )}
-
-        {/* ── BLOCKLIST TAB ── */}
         {activeTab === "blocklist" && (
-          <div style={{ animation: "fadeIn 0.3s ease", maxWidth: 700 }}>
-            <div className="panel" style={{ marginBottom: 16 }}>
-              <SectionTitle label="IP Blocking" title="Block an IP Address" />
-              <div style={{ display: "flex", gap: 12, marginBottom: 10 }}>
-                <input value={blockInput} onChange={e => setBlockInput(e.target.value)}
-                  onKeyDown={e => e.key === "Enter" && blockIP()}
-                  className="dark-input" placeholder="192.168.1.50" style={{ flex: 1 }} />
-                <button onClick={blockIP} className="danger-btn" style={{ flexShrink: 0, padding: "10px 24px" }}>
-                  Block IP
-                </button>
-              </div>
-              <div style={{ display: "flex", gap: 10 }}>
-                <div style={{ flex: 2 }}>
-                  <input value={blockReason} onChange={e => setBlockReason(e.target.value)}
-                    className="dark-input" placeholder="Reason (optional)" />
-                </div>
-                <div style={{ flex: 1 }}>
-                  <select value={blockTTL} onChange={e => setBlockTTL(e.target.value)}
-                    className="dark-input" style={{ background: "#0a1628", colorScheme: "dark" }}>
-                    <option value="">Permanent</option>
-                    <option value="3600">1 Hour</option>
-                    <option value="21600">6 Hours</option>
-                    <option value="86400">24 Hours</option>
-                    <option value="604800">7 Days</option>
-                  </select>
-                </div>
-              </div>
-              {currentUser?.role !== "admin" && currentUser?.role !== "analyst" && (
-                <div style={{ fontSize: 12, color: "#f97316", marginTop: 8 }}>⚠️ You need Analyst or Admin role to block IPs</div>
-              )}
-            </div>
-
-            <div className="panel">
-              <SectionTitle label="Blocklist" title={`Blocked IPs (${blockedIPs.length})`} />
-              {blockedIPs.length === 0 ? (
-                <div style={{ color: "#475569", fontSize: 13, padding: "12px 0" }}>No IPs currently blocked.</div>
-              ) : (
-                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                  {blockedIPs.map((b, i) => (
-                    <div key={i} style={{
-                      padding: "12px 16px", background: "rgba(239,68,68,0.05)", borderRadius: 10,
-                      border: "1px solid rgba(239,68,68,0.15)"
-                    }}>
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                        <div>
-                          <span style={{ fontSize: 14, fontFamily: "monospace", color: "#f87171", fontWeight: 700 }}>{b.ip}</span>
-                          <span style={{ fontSize: 10, color: "#475569", marginLeft: 10, background: "rgba(255,255,255,0.05)", borderRadius: 4, padding: "2px 6px", textTransform: "uppercase", letterSpacing: "0.06em" }}>{b.layer || "firewall"}</span>
-                        </div>
-                        {(currentUser?.role === "admin" || currentUser?.role === "analyst") && (
-                          <button onClick={() => unblockIP(b.ip)} className="action-btn" style={{ padding: "6px 14px", fontSize: 12 }}>
-                            Unblock
-                          </button>
-                        )}
-                      </div>
-                      <div style={{ marginTop: 8, display: "flex", gap: 16, flexWrap: "wrap" }}>
-                        {b.reason && <span style={{ fontSize: 11, color: "#64748b" }}>📋 {b.reason}</span>}
-                        {b.blocked_by && <span style={{ fontSize: 11, color: "#64748b" }}>👤 {b.blocked_by}</span>}
-                        {b.blocked_at && <span style={{ fontSize: 11, color: "#334155", fontFamily: "monospace" }}>🕐 {b.blocked_at.slice(0,19).replace("T"," ")}</span>}
-                        {b.expires_at && <span style={{ fontSize: 11, color: "#f97316" }}>⏱ expires {b.expires_at.slice(0,19).replace("T"," ")}</span>}
-                        {!b.expires_at && <span style={{ fontSize: 11, color: "#475569" }}>∞ permanent</span>}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
+          <BlocklistTab
+            blockInput={blockInput}
+            setBlockInput={setBlockInput}
+            blockIP={blockIP}
+            blockReason={blockReason}
+            setBlockReason={setBlockReason}
+            blockTTL={blockTTL}
+            setBlockTTL={setBlockTTL}
+            currentUser={currentUser}
+            blockedIPs={blockedIPs}
+            unblockIP={unblockIP}
+          />
         )}
-
-        {/* ── DEVICES TAB ── */}
         {activeTab === "devices" && (
-        <div style={{ animation: "fadeIn 0.2s ease" }}>
-          <div className="panel" style={{ marginBottom: 20 }}>
-            <SectionTitle label="Network Scanner" title="Connected Devices" />
-            <div style={{ display: "flex", gap: 12, marginBottom: 16, flexWrap: "wrap" }}>
-              <button className="action-btn" disabled={devicesLoading} onClick={async () => {
-                setDevicesLoading(true);
-                setDevicesScanMode("arp");
-                setDevicesScanError("");
-                try {
-                  const ctrl = new AbortController();
-                  const tid = setTimeout(() => ctrl.abort(), 90000); // 90s timeout
-                  const res = await fetch(`${API}/network/scan/arp`, {
-                    method: "POST",
-                    headers: { Authorization: `Bearer ${TokenStore.getAccess()}` },
-                    signal: ctrl.signal,
-                  });
-                  clearTimeout(tid);
-                  const r = await res.json().catch(() => ({}));
-                  if (!res.ok) throw new Error(r.detail || "ARP scan failed");
-                  setDevices(r.devices || []);
-                  setDevicesScanTime(r.timestamp);
-                  showToast(`Quick scan found ${r.total || 0} devices`);
-                } catch(e) {
-                  const msg = e.name === "AbortError" ? "Quick scan timed out" : (e.message || "Quick scan failed");
-                  setDevicesScanError(msg);
-                  showToast(msg, "error");
-                }
-                setDevicesLoading(false);
-                setDevicesScanMode(null);
-              }}>
-                {devicesLoading && devicesScanMode === "arp" ? "⏳ Scanning (30-60s)..." : "⚡ Quick ARP Scan"}
-              </button>
-              <button className="action-btn" disabled={devicesLoading} onClick={async () => {
-                setDevicesLoading(true);
-                setDevicesScanMode("full");
-                setDevicesScanError("");
-                try {
-                  const ctrl = new AbortController();
-                  const tid = setTimeout(() => ctrl.abort(), 180000); // 3 min timeout
-                  const res = await fetch(`${API}/network/scan`, {
-                    method: "POST",
-                    headers: { Authorization: `Bearer ${TokenStore.getAccess()}` },
-                    signal: ctrl.signal,
-                  });
-                  clearTimeout(tid);
-                  const r = await res.json().catch(() => ({}));
-                  if (!res.ok) throw new Error(r.detail || "Full scan failed");
-                  if (!r.devices) throw new Error("Full scan timed out before results were ready");
-                  setDevices(r.devices || []);
-                  setDevicesScanTime(r.timestamp);
-                  showToast(`Full scan found ${r.total || 0} devices`);
-                } catch(e) {
-                  const msg = e.name === "AbortError" ? "Full scan timed out" : (e.message || "Full scan failed");
-                  setDevicesScanError(msg);
-                  showToast(msg, "error");
-                }
-                setDevicesLoading(false);
-                setDevicesScanMode(null);
-              }}>
-                {devicesLoading && devicesScanMode === "full" ? "⏳ Scanning (60-120s)..." : "🔍 Full ARP + Nmap Scan"}
-              </button>
-              {devicesScanTime && (
-                <span style={{ fontSize: 11, color: "#475569", alignSelf: "center" }}>
-                  Last scan: {devicesScanTime.replace("T", " ")}
-                </span>
-              )}
-            </div>
-
-            {devicesScanError && !devicesLoading && (
-              <div style={{
-                background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.22)",
-                borderRadius: 10, padding: "10px 14px", marginBottom: 14,
-                color: "#f87171", fontSize: 12
-              }}>
-                {devicesScanError}
-              </div>
-            )}
-
-            {devicesLoading && (
-              <div style={{ textAlign: "center", padding: "40px 0", color: "#38bdf8" }}>
-                <div style={{ fontSize: 24, marginBottom: 12 }}>📡</div>
-                <div style={{ fontSize: 13, color: "#64748b" }}>
-                  {devicesScanMode === "full"
-                    ? "Ping sweep → ARP → Nmap... please wait 30-60 seconds"
-                    : "Ping sweep → ARP scan... please wait 5-15 seconds"}
-                </div>
-              </div>
-            )}
-
-            {!devicesLoading && devices.length === 0 && (
-              <div style={{ textAlign: "center", padding: "40px 0", color: "#475569" }}>
-                <div style={{ fontSize: 32, marginBottom: 12 }}>🌐</div>
-                <div style={{ fontSize: 13 }}>Click "Quick ARP Scan" to discover devices on your network</div>
-              </div>
-            )}
-
-            {!devicesLoading && devices.length > 0 && (
-              <div>
-                <div style={{ fontSize: 12, color: "#475569", marginBottom: 14 }}>
-                  Discovered <span style={{ color: "#38bdf8", fontWeight: 700 }}>{devices.length}</span> devices on network
-                </div>
-                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                  {devices.map((d, i) => (
-                    <div key={i} style={{
-                      padding: "14px 16px",
-                      background: d.is_self ? "rgba(56,189,248,0.06)" : d.is_gateway ? "rgba(34,211,160,0.06)" : "rgba(255,255,255,0.02)",
-                      border: `1px solid ${d.is_self ? "rgba(56,189,248,0.2)" : d.is_gateway ? "rgba(34,211,160,0.15)" : "rgba(255,255,255,0.06)"}`,
-                      borderRadius: 10
-                    }}>
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 8 }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                          <div style={{ fontSize: 20 }}>
-                            {d.device_type === "this_device" || d.is_self
-                              ? "💻"
-                              : d.device_type === "gateway" || d.is_gateway
-                                ? "📶"
-                                : d.device_type === "phone"
-                                  ? "📱"
-                                  : d.device_type === "computer"
-                                    ? "🖥️"
-                                    : "◇"}
-                          </div>
-                          <div>
-                            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                              <span style={{ fontSize: 15, fontFamily: "monospace", color: "#38bdf8", fontWeight: 700 }}>{d.ip}</span>
-                              {d.is_self && <span style={{ fontSize: 10, background: "rgba(56,189,248,0.15)", color: "#38bdf8", borderRadius: 4, padding: "2px 6px", fontWeight: 700 }}>THIS DEVICE</span>}
-                              {d.is_gateway && <span style={{ fontSize: 10, background: "rgba(34,211,160,0.15)", color: "#22d3a0", borderRadius: 4, padding: "2px 6px", fontWeight: 700 }}>GATEWAY</span>}
-                            </div>
-                            <div style={{ fontSize: 12, color: "#64748b", marginTop: 3 }}>
-                              {d.hostname !== "unknown" && <span style={{ marginRight: 12 }}>🏷️ {d.hostname}</span>}
-                              {d.vendor !== "Unknown" && <span>🏭 {d.vendor}</span>}
-                            </div>
-                          </div>
-                        </div>
-                        <div style={{ textAlign: "right" }}>
-                          <div style={{ fontSize: 11, fontFamily: "monospace", color: "#475569" }}>{d.mac || "—"}</div>
-                          <div style={{
-                            fontSize: 10,
-                            color: d.status === "online" || d.status === "up" ? "#22d3a0" : d.status === "seen_recently" ? "#f97316" : "#ef4444",
-                            marginTop: 3,
-                            fontWeight: 600
-                          }}>
-                            ● {d.status === "seen_recently" ? "SEEN RECENTLY" : d.status?.toUpperCase()}
-                          </div>
-                        </div>
-                      </div>
-                      {d.open_ports && d.open_ports.length > 0 && (
-                        <div style={{ marginTop: 10, display: "flex", gap: 6, flexWrap: "wrap" }}>
-                          {d.open_ports.slice(0, 8).map((p, pi) => (
-                            <span key={pi} style={{
-                              fontSize: 10, fontFamily: "monospace",
-                              background: "rgba(167,139,250,0.1)", color: "#a78bfa",
-                              border: "1px solid rgba(167,139,250,0.2)",
-                              borderRadius: 4, padding: "2px 7px"
-                            }}>{p.port}/{p.proto} {p.service}</span>
-                          ))}
-                          {d.open_ports.length > 8 && (
-                            <span style={{ fontSize: 10, color: "#475569" }}>+{d.open_ports.length - 8} more</span>
-                          )}
-                        </div>
-                      )}
-                      {d.os && d.os !== "unknown" && (
-                        <div style={{ marginTop: 6, fontSize: 11, color: "#475569" }}>🖥️ OS: {d.os}</div>
-                      )}
-                      <div style={{ marginTop: 10, display: "flex", gap: 8 }}>
-                        {(currentUser?.role === "admin" || currentUser?.role === "analyst") && !d.is_self && !d.is_gateway && (
-                          <button className="danger-btn" style={{ padding: "5px 12px", fontSize: 11 }}
-                            onClick={() => {
-                              setBlockInput(d.ip);
-                              setBlockReason(`Suspicious device: ${d.hostname || d.ip}`);
-                              setActiveTab("blocklist");
-                            }}>
-                            🚫 Block IP
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-        {/* ── USERS TAB (admin only) ── */}
+          <DevicesTab
+            devicesLoading={devicesLoading}
+            setDevicesLoading={setDevicesLoading}
+            devicesScanMode={devicesScanMode}
+            setDevicesScanMode={setDevicesScanMode}
+            devicesScanError={devicesScanError}
+            setDevicesScanError={setDevicesScanError}
+            devices={devices}
+            setDevices={setDevices}
+            devicesScanTime={devicesScanTime}
+            setDevicesScanTime={setDevicesScanTime}
+            showToast={showToast}
+            currentUser={currentUser}
+            setBlockInput={setBlockInput}
+            setBlockReason={setBlockReason}
+            setActiveTab={setActiveTab}
+            API={API}
+          />
+        )}
         {activeTab === "users" && currentUser?.role === "admin" && (
-          <UsersPanel token={TokenStore.getAccess()} currentUser={currentUser} themeMode={themeMode} />
+          <UsersTab token={TokenStore.getAccess()} currentUser={currentUser} themeMode={themeMode} API={API} />
         )}
 
       </div>

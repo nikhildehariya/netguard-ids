@@ -27,6 +27,9 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
 
+import config
+from scanner import _get_default_gateway, _get_local_ip
+
 # ── Paths ──────────────────────────────────────────────────────
 _BASE = Path(__file__).resolve().parent.parent / "logs"
 DB_PATH = _BASE / "blocklist.db"
@@ -100,7 +103,25 @@ def _parse_ip(ip: str):
 
 
 def _is_protected(addr) -> bool:
-    return any(addr in net for net in _PROTECTED)
+    # 1. Check loopback and protected subnets
+    if any(addr in net for net in _PROTECTED):
+        return True
+
+    # 2. Check local gateway
+    gw = _get_default_gateway()
+    if gw and str(addr) == gw:
+        return True
+
+    # 3. Check local host IP
+    local_ip = _get_local_ip()
+    if local_ip and str(addr) == local_ip:
+        return True
+
+    # 4. Check configured whitelisted IPs
+    if str(addr) in config.WHITELISTED_IPS:
+        return True
+
+    return False
 
 
 # ── Firewall layer ─────────────────────────────────────────────

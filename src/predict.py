@@ -4,7 +4,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import joblib
 import numpy as np
-from datetime import datetime
+from datetime import datetime, timezone
 
 from config import (
     MODEL_PATH, SCALER_PATH,
@@ -52,7 +52,7 @@ class IntrusionDetector:
                 LABEL_NAMES[i]: round(float(p), 4)
                 for i, p in enumerate(proba)
             },
-            "timestamp": datetime.now().isoformat(timespec="seconds"),
+            "timestamp": datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z"),
         }
 
     def predict_batch(self, records: list[dict]) -> list[dict]:

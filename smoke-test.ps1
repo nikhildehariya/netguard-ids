@@ -31,7 +31,7 @@ $testPayload = @{
   "Dst Port"=80; "Protocol"=6; "Flow Duration"=6010454; "Tot Fwd Pkts"=4; "Tot Bwd Pkts"=4;
   "TotLen Fwd Pkts"=285; "TotLen Bwd Pkts"=972; "test_mode"=$true
 } | ConvertTo-Json
-Invoke-RestMethod -Method POST -Uri "$API/predict" -ContentType "application/json" -Body $testPayload | ConvertTo-Json -Depth 5
+Invoke-RestMethod -Method POST -Uri "$API/predict" -ContentType "application/json" -Headers $H -Body $testPayload | ConvertTo-Json -Depth 5
 
 Write-Host "`n[7] Network scan quick"
 Invoke-RestMethod -Method POST -Uri "$API/network/scan/arp" -Headers $H | ConvertTo-Json -Depth 5
