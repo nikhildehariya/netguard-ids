@@ -26,6 +26,8 @@ from auth import (
     create_user, list_users, update_user_role, delete_user, toggle_user_active,
     ROLE_PERMISSIONS
 )
+from explainable import explain_prediction
+from genai_assistant import generate_threat_briefing, process_copilot_query
 from config import AGENT_SECRET_KEY, SECRET_KEY
 
 
@@ -200,6 +202,15 @@ class UpdateRoleRequest(BaseModel):
 
 class AlertSettingsUpdateRequest(BaseModel):
     alert_to_email: str
+
+
+class ExplainRequest(BaseModel):
+    record: dict
+    prediction: Optional[dict] = None
+
+
+class AssistantQueryRequest(BaseModel):
+    query: str
 
 
 # ── Auth helpers ───────────────────────────────────────────────
@@ -872,6 +883,44 @@ def activate_license(req: LicenseActivationRequest):
     with open(env_path, "w") as f:
         f.writelines(lines)
         
-    # Reload OS env for current process
     os.environ["LICENSE_KEY"] = req.key
     return {"message": "License successfully activated!", "expires_at": val["expires_at"], "client": val["client"]}
+
+
+# ══════════════════════════════════════════════════════════════
+# EXPLAINABLE AI (XAI) & GENAI ASSISTANT ENDPOINTS
+# ══════════════════════════════════════════════════════════════
+
+@app.post("/explain")
+def explain_traffic(req: ExplainRequest, request: Request):
+    require_permission(request, "view")
+    try:
+        traffic_data = req.record
+        if req.prediction:
+            pred_res = req.prediction
+        else:
+            pred_res = detector.predict(traffic_data)
+        explanation = explain_prediction(traffic_data, pred_res)
+        return explanation
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/assistant/insights")
+def assistant_insights(request: Request):
+    require_permission(request, "view")
+    try:
+        return generate_threat_briefing()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/assistant/chat")
+def assistant_chat(req: AssistantQueryRequest, request: Request):
+    require_permission(request, "view")
+    try:
+        if not req.query.strip():
+            raise HTTPException(status_code=400, detail="Query prompt cannot be empty")
+        return process_copilot_query(req.query)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

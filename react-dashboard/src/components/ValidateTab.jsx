@@ -8,6 +8,7 @@ export default function ValidateTab({
   runValidation,
   valLoading,
   valResult,
+  onExplain,
 }) {
   return (
     <div style={{ animation: "fadeIn 0.3s ease", maxWidth: 700 }}>
@@ -31,7 +32,8 @@ export default function ValidateTab({
             <div style={{
               padding: "14px 18px", borderRadius: 10, marginBottom: 20,
               background: `${SEV_COLOR[valResult.severity] || "#22d3a0"}18`,
-              border: `1px solid ${SEV_COLOR[valResult.severity] || "#22d3a0"}44`
+              border: `1px solid ${SEV_COLOR[valResult.severity] || "#22d3a0"}44`,
+              display: "flex", alignItems: "center", justifyContent: "space-between"
             }}>
               <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
                 <Pill color={COLORS[valResult.prediction] || "#22d3a0"}>{valResult.prediction?.replace("_", " ")}</Pill>
@@ -40,6 +42,18 @@ export default function ValidateTab({
                 </span>
                 <Pill color={SEV_COLOR[valResult.severity]}>{valResult.severity?.toUpperCase()}</Pill>
               </div>
+
+              {/* XAI Why Detected Button */}
+              <button
+                onClick={() => onExplain && onExplain(PRESETS[valPreset], valResult)}
+                style={{
+                  fontSize: 12, padding: "6px 12px", borderRadius: 8, cursor: "pointer", fontWeight: 700,
+                  background: "linear-gradient(135deg, #0ea5e9, #2563eb)", border: "none",
+                  color: "#fff", transition: "all 0.15s"
+                }}
+              >
+                🔍 Why Detected?
+              </button>
             </div>
 
             <div style={{ fontSize: 11, color: "#475569", letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 12 }}>Score Breakdown</div>
