@@ -59,7 +59,7 @@ if ($BackendRunning) {
     $BackendProcess = Start-Process -FilePath "venv\Scripts\python.exe" -ArgumentList "-m uvicorn api.main:app --host 127.0.0.1 --port $ApiPort" -PassThru -NoNewWindow
 }
 
-Write-Host "[5] Starting React dashboard on port 5173..." -ForegroundColor Yellow
+Write-Host "[5] Starting React dashboard on port 5174..." -ForegroundColor Yellow
 Push-Location react-dashboard
 $FrontendProcess = Start-Process -FilePath "npm.cmd" -ArgumentList "run dev" -PassThru -NoNewWindow
 Pop-Location
@@ -69,15 +69,16 @@ Write-Host "`n[6] Waiting for services to initialize..." -ForegroundColor Yellow
 Start-Sleep -Seconds 5
 
 Write-Host "Opening dashboard in your web browser..." -ForegroundColor Green
-Start-Process "http://localhost:5173"
+Start-Process "http://localhost:5174"
 
 # ── Process Monitoring Loop ───────────────────────────────────
 Write-Host "`n=======================================================" -ForegroundColor Cyan
 Write-Host "NetGuard IDS is running!" -ForegroundColor Green
 Write-Host "- API Server: http://127.0.0.1:$ApiPort" -ForegroundColor Gray
-Write-Host "- Web Panel:  http://localhost:5173" -ForegroundColor Gray
+Write-Host "- Web Panel:  http://localhost:5174" -ForegroundColor Gray
 Write-Host "Press Ctrl+C or close this window to stop both servers." -ForegroundColor Yellow
 Write-Host "=======================================================" -ForegroundColor Cyan
+
 
 try {
     while ($true) {
