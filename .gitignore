@@ -1,17 +1,30 @@
+# Environment & Virtual Environments
 venv/
+.env
+
+# Python & Caching
 __pycache__/
 *.pyc
 *.pkl
+
+# Build & Dependencies
+node_modules/
+dist/
+react-dashboard/dist/
+
+# Project Data & Logs
 logs/
 data/
 models/
 reports/
-.env
-node_modules/
-dist/
-react-dashboard/dist/
 *.db
 *.csv
 *.log
 
-react-dashboard/src/api/
+# IDE & System Files
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db

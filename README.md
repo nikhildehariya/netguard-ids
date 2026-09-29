@@ -4,11 +4,11 @@
 ![Python](https://img.shields.io/badge/Python-3.11-blue?style=flat-square&logo=python)
 ![XGBoost](https://img.shields.io/badge/XGBoost-F1%3A90.25%25-green?style=flat-square)
 ![React](https://img.shields.io/badge/React-Dashboard-61DAFB?style=flat-square&logo=react)
-![FastAPI](https://img.shields.io/badge/FastAPI-v0.100-009688?style=flat-square&logo=fastapi)
+![FastAPI](https://img.shields.io/badge/FastAPI-v0.111-009688?style=flat-square&logo=fastapi)
 ![Nmap](https://img.shields.io/badge/Nmap-7.99-orange?style=flat-square)
 ![License](https://img.shields.io/badge/License-MIT-yellow?style=flat-square)
 
-> **Real-time IoT network traffic classification and automated threat response system** built on CIC-IDS2018 dataset with XGBoost classifier, JWT authentication, live packet capture, network device scanning, and automated firewall blocking.
+> **Real-time IoT network traffic classification and automated threat response system** built on CIC-IDS2018 dataset with XGBoost classifier, JWT authentication, live packet capture, network device scanning, automated firewall blocking, Explainable AI (XAI), and GenAI Security Copilot.
 
 ---
 
@@ -22,11 +22,12 @@
 
 ## ✨ Features
 
-### 🤖 Machine Learning
+### 🤖 Machine Learning & XAI
 - **XGBoost Classifier** trained on CIC-IDS2018 (8.2M flows, 80 features)
 - **90.25% Macro F1 Score** across 5 attack classes
 - **Per-class confidence thresholds** for precision tuning
-- Real-time inference via REST API
+- **Explainable AI (XAI)** feature importance breakdown per detection (`/explain`)
+- Real-time single & batch flow inference via REST API
 
 ### 🔍 Attack Detection
 | Class | Type | Severity | Confidence |
@@ -41,7 +42,7 @@
 - **Scapy-based** network flow extractor
 - Bidirectional flow analysis (80 CIC features)
 - TCP flag analysis, IAT computation, window size tracking
-- Auto-flush every 30 seconds for long-lived flows
+- **Auto-flush every 2 seconds** for active flows to ensure immediate dashboard updates
 - WiFi + SPAN/TAP port support
 
 ### 🔎 Network Device Scanner
@@ -52,10 +53,14 @@
 - One-click block suspicious devices directly from dashboard
 - Cached results for instant reload
 
+### 🤖 GenAI Security Copilot
+- **Threat Briefing Generator** (`/assistant/insights`) — AI-synthesized incident summaries
+- **Interactive Security Assistant** (`/assistant/chat`) — natural language copilot for network query and analysis
+
 ### 🔐 Security & Authentication
 - **JWT-based auth** with access + refresh tokens
 - **Role-based access control (RBAC)**
-  - `admin` → Full access (users, block, unblock, reports, capture, scan)
+  - `admin` → Full access (users, block, unblock, reports, capture, scan, settings)
   - `analyst` → Monitor, capture, block IPs, scan network, export reports
   - `viewer` → Read-only dashboard
 - **PBKDF2-HMAC-SHA256** password hashing (260,000 iterations)
@@ -64,19 +69,19 @@
 
 ### 🚨 Alerting
 - **HTML Email alerts** (Gmail SMTP SSL)
-- **Telegram Bot** real-time notifications
+- **Telegram Bot** real-time notifications with 1-click block actions
 - Configurable confidence threshold (default: 85%)
 - Severity-based filtering
 
 ### 🚫 Automated Response
-- **Windows Firewall** auto-block (netsh advfirewall)
+- **Windows Firewall** auto-block (`netsh advfirewall`)
 - **Linux iptables** support (INPUT + OUTPUT + FORWARD)
 - TTL-based auto-expiry
 - Threshold-based auto-block (configurable)
 - Full audit trail in SQLite
 
 ### 📊 Dashboard
-- **React + Vite** frontend
+- **React + Vite** frontend (Port 5174)
 - Live timeline chart, pie chart by class
 - Incident feed with one-click block
 - PDF report export (dark theme, professional)
@@ -99,7 +104,7 @@
 │                      NetGuard IDS v2.1                      │
 ├──────────────┬──────────────────────┬───────────────────────┤
 │  Capture     │   FastAPI Backend    │   React Dashboard     │
-│  (Scapy)     │   (Port 8080)        │   (Port 5173)         │
+│  (Scapy)     │   (Port 8080)        │   (Port 5174)         │
 │              │                      │                       │
 │ Network      │ /predict             │ Overview              │
 │ Packets  ──► │ /history             │ Capture Control       │
@@ -108,7 +113,8 @@
 │ Features ──► │ /blocked-ips         │ Blocklist             │
 │              │ /reports/export      │ Devices Scanner       │
 │              │ /network/scan        │ User Management       │
-│              │ /network/scan/arp    │                       │
+│              │ /explain             │ Copilot Assistant     │
+│              │ /assistant/*         │                       │
 └──────────────┴────────┬─────────────┴───────────────────────┘
                         │
            ┌────────────▼────────────┐
@@ -152,10 +158,12 @@ C:\iot-ids\
 │   ├── auth.py              ← JWT auth, RBAC, user management
 │   ├── detections_db.py     ← SQLite CRUD operations + CSV migration
 │   ├── reporting.py         ← PDF report generation (ReportLab)
-│   └── scanner.py           ← Network device scanner (ARP + Nmap)
+│   ├── scanner.py           ← Network device scanner (ARP + Nmap)
+│   ├── explainable.py       ← XAI feature importance breakdown
+│   └── genai_assistant.py   ← GenAI Security Copilot & briefings
 ├── react-dashboard/
 │   └── src/
-│       └── App.jsx          ← Full React dashboard (single file)
+│       └── App.jsx          ← Full React dashboard
 ├── models/
 │   ├── xgb_model.pkl        ← Trained XGBoost model (~45 MB)
 │   └── scaler.pkl           ← StandardScaler fitted on training data
@@ -164,6 +172,8 @@ C:\iot-ids\
 │   ├── auth.db              ← Users, tokens, login attempts
 │   ├── blocklist.db         ← Blocked IPs + full audit log
 │   └── capture.log          ← Live capture output
+├── run-netguard.ps1         ← Unified 1-click launcher script
+├── smoke-test.ps1           ← End-to-end API & DB test script
 ├── data/                    ← CIC-IDS2018 CSVs (not in repo)
 ├── reports/                 ← Generated PDF reports
 ├── .env                     ← Secrets and credentials (not in repo)
@@ -175,13 +185,35 @@ C:\iot-ids\
 ## 🚀 Quick Start
 
 ### Prerequisites
-- Python 3.11+
-- Node.js 18+
-- Windows 10/11 (for firewall blocking) or Linux
-- Npcap (Windows) or libpcap (Linux) — for packet capture
+- **Python 3.11+**
+- **Node.js 18+**
+- **Windows 10/11** (for Firewall blocking) or **Linux** (iptables)
+- **Npcap** (Windows) or **libpcap** (Linux) — for live packet capture
 - **Nmap 7.99+** — for network device scanning ([download](https://nmap.org/download.html))
 
-### 1. Clone & Setup
+---
+
+### Option 1: 1-Click Launch (Recommended)
+
+Run the unified PowerShell launcher script in Admin PowerShell:
+
+```powershell
+.\run-netguard.ps1
+```
+
+> **What `run-netguard.ps1` does automatically:**
+> 1. Verifies Python 3.11+ and Node.js 18+ prerequisites.
+> 2. Creates the Python `venv` and installs dependencies from `requirements.txt`.
+> 3. Installs frontend `node_modules` inside `react-dashboard`.
+> 4. Starts the FastAPI backend on `http://127.0.0.1:8080`.
+> 5. Starts the React Dashboard on `http://localhost:5174`.
+> 6. Opens the web dashboard automatically in your default browser.
+
+---
+
+### Option 2: Manual Setup & Launch
+
+#### 1. Clone & Setup Python Environment
 ```bash
 git clone https://github.com/nikhildehariya/netguard-ids.git
 cd netguard-ids
@@ -190,7 +222,8 @@ venv\Scripts\activate        # Windows
 pip install -r requirements.txt
 ```
 
-### 2. Configure `.env`
+#### 2. Configure `.env`
+Create a `.env` file in the root directory:
 ```env
 # Email Alerts
 ALERT_FROM_EMAIL=your@gmail.com
@@ -201,7 +234,7 @@ ALERT_PASSWORD=your_app_password
 TELEGRAM_BOT_TOKEN=your_bot_token
 TELEGRAM_CHAT_ID=your_chat_id
 
-# Auth — generate: python -c "import secrets; print(secrets.token_hex(32))"
+# Auth — generate key: python -c "import secrets; print(secrets.token_hex(32))"
 SECRET_KEY=your_64_char_hex_key
 DASHBOARD_USERNAME=admin
 DASHBOARD_PASSWORD=netguard123
@@ -213,46 +246,53 @@ AUTO_BLOCK_CONFIDENCE=0.95
 AUTO_BLOCK_SEVERITIES=critical
 ```
 
-### 3. Train Model
+#### 3. Train Model (Optional — Pre-trained Model Included)
 ```bash
 # Place CIC-IDS2018 CSVs in data/ folder
 python src/train.py
-# Expected: Macro F1 ≈ 0.9025
+# Expected output: Macro F1 ≈ 0.9025
 ```
 
-### 4. Start Services
-```bash
-# API (Admin PowerShell)
-uvicorn api.main:app --host 0.0.0.0 --port 8080
+#### 4. Start Services Manually
 
-# Dashboard
+**Terminal 1 — API Backend** (Admin PowerShell / Terminal):
+```powershell
+uvicorn api.main:app --host 0.0.0.0 --port 8080
+```
+
+**Terminal 2 — React Dashboard**:
+```powershell
 cd react-dashboard
 npm install
-npm run build
-serve -s dist -l 5173
+npm run dev
 ```
 
-### 5. Access
-- Dashboard: http://localhost:5173
-- API Docs: http://localhost:8080/docs
-- Default login: `admin` / `netguard123`
+#### 5. Access Services
+- **Dashboard**: [http://localhost:5174](http://localhost:5174)
+- **API Documentation**: [http://localhost:8080/docs](http://localhost:8080/docs)
+- **Default Login Credentials**: `admin` / `netguard123`
 
 ---
 
-## 🔧 NSSM Services (24/7 on Windows)
+## 🔧 NSSM Services (24/7 Production on Windows)
+
+To run NetGuard IDS permanently in the background as Windows services using NSSM:
 
 ```powershell
-# Install as Windows services (Admin PowerShell)
+# 1. Install NetGuard API Service (Admin PowerShell)
 nssm install NetGuard-API "C:\iot-ids\venv\Scripts\uvicorn.exe" "api.main:app --host 0.0.0.0 --port 8080"
 nssm set NetGuard-API AppDirectory "C:\iot-ids"
 
-nssm install NetGuard-React serve "-s dist -l 5173"
+# 2. Install NetGuard React Dashboard Service (Port 5174)
+nssm install NetGuard-React "C:\Program Files\nodejs\npx.cmd" "serve -s dist -l 5174"
 nssm set NetGuard-React AppDirectory "C:\iot-ids\react-dashboard"
 
-nssm install NetGuard-Capture "C:\iot-ids\venv\Scripts\python.exe" "src/capture.py --iface YOUR_INTERFACE"
+# 3. Install NetGuard Packet Capture Service
+# Note: Replace "Wi-Fi" with your interface name from GET /capture/interfaces
+nssm install NetGuard-Capture "C:\iot-ids\venv\Scripts\python.exe" "src/capture.py --iface ""Wi-Fi"""
 nssm set NetGuard-Capture AppDirectory "C:\iot-ids"
 
-# Start all
+# Start all services
 nssm start NetGuard-API
 nssm start NetGuard-React
 nssm start NetGuard-Capture
@@ -260,33 +300,32 @@ nssm start NetGuard-Capture
 
 ---
 
-## 🧪 Attack Validation
+## 🧪 Testing & Validation
 
-### DoS/DDoS Test
+### End-to-End Automated Smoke Test
+Run the automated test suite against a running server:
+```powershell
+.\smoke-test.ps1
+```
+
+### Manual Attack Validation Examples
+
+#### DoS/DDoS Classification Test
 ```powershell
 $body = Get-Content "dos_test.json" -Raw
 Invoke-RestMethod -Uri "http://localhost:8080/predict" -Method POST -ContentType "application/json" -Body $body
-# Expected: DOS_DDOS | 100% confidence | CRITICAL
+# Expected output: DOS_DDOS | 100% confidence | CRITICAL
 ```
 
-### Brute Force Test
-```powershell
-# Via dashboard → Validate tab → "Brute Force SSH" preset
-# Expected: BRUTE_FORCE | 83.92% | HIGH
-```
+#### Brute Force Test
+- Via Dashboard → **Validate** tab → Select **"Brute Force SSH"** preset.
+- Expected output: `BRUTE_FORCE` | ~83.92% confidence | `HIGH`
 
-### Web Attack Test
-```powershell
-# Via dashboard → Validate tab → custom payload
-# Expected: WEB_ATTACK | 98.44% | HIGH
-```
-
-### Network Device Scan
+#### Network Device Scan API
 ```powershell
 $login = Invoke-RestMethod -Uri "http://localhost:8080/auth/login" -Method POST -ContentType "application/json" -Body '{"username":"admin","password":"netguard123"}'
 $headers = @{Authorization = "Bearer $($login.access_token)"}
 Invoke-RestMethod -Uri "http://localhost:8080/network/scan/arp" -Method POST -Headers $headers
-# Returns: all connected devices with IP, MAC, hostname
 ```
 
 ---
@@ -299,7 +338,7 @@ Invoke-RestMethod -Uri "http://localhost:8080/network/scan/arp" -Method POST -He
 | Training samples | ~6.5M flows |
 | Test samples | ~1.6M flows |
 | Features | 80 network flow features |
-| Algorithm | XGBoost (n_estimators=300, max_depth=6) |
+| Algorithm | XGBoost (`n_estimators=300`, `max_depth=6`) |
 | **Macro F1 Score** | **0.9025** |
 
 | Class | Precision | Recall | F1 |
@@ -316,69 +355,78 @@ Invoke-RestMethod -Uri "http://localhost:8080/network/scan/arp" -Method POST -He
 
 | Method | Endpoint | Auth | Description |
 |--------|----------|------|-------------|
-| POST | `/auth/login` | ❌ | Login, get JWT tokens |
+| POST | `/auth/login` | ❌ | Authenticate user, return JWT tokens |
 | POST | `/auth/refresh` | ❌ | Refresh access token |
 | POST | `/auth/logout` | ❌ | Revoke refresh token |
-| GET | `/auth/me` | ✅ any | Current user info |
-| POST | `/auth/users` | ✅ admin | Create new user |
-| GET | `/auth/users` | ✅ admin | List all users |
-| PATCH | `/auth/users/{u}/role` | ✅ admin | Update user role |
-| DELETE | `/auth/users/{u}` | ✅ admin | Delete user |
-| GET | `/admin/alert-settings` | ✅ admin | Get alert recipient configuration |
-| PATCH | `/admin/alert-settings` | ✅ admin | Update alert recipient email |
-| POST | `/predict` | ❌ | Single flow classification |
-| GET | `/history` | ✅ viewer | Detection history |
-| GET | `/stats` | ✅ viewer | Aggregate statistics |
-| GET | `/health` | ❌ | API health check |
-| GET | `/blocked-ips` | ✅ viewer | List blocked IPs |
-| POST | `/blocked-ips` | ✅ analyst | Block an IP |
-| DELETE | `/blocked-ips/{ip}` | ✅ admin | Unblock an IP |
-| POST | `/blocked-ips/bulk-block` | ✅ analyst | Block multiple IPs |
-| POST | `/blocked-ips/bulk-unblock` | ✅ admin | Unblock multiple IPs |
-| GET | `/blocked-ips/audit` | ✅ admin | Block/unblock audit log |
-| GET | `/capture/interfaces` | ✅ analyst | List network interfaces |
-| POST | `/capture/start` | ✅ analyst | Start packet capture |
-| POST | `/capture/stop` | ✅ analyst | Stop packet capture |
-| GET | `/capture/status` | ✅ viewer | Capture status |
-| GET | `/reports/export` | ✅ analyst | Export PDF report |
-| POST | `/network/scan/arp` | ✅ analyst | Quick ARP device scan |
-| POST | `/network/scan` | ✅ analyst | Full ARP + Nmap scan |
-| GET | `/network/devices` | ✅ viewer | Cached device list |
-| POST | `/admin/migrate-csv` | ✅ admin | Migrate CSV to SQLite |
+| GET | `/auth/me` | ✅ any | Current authenticated user info |
+| POST | `/auth/users` | ✅ admin | Create new user account |
+| GET | `/auth/users` | ✅ admin | List all user accounts |
+| PATCH | `/auth/users/{username}/role` | ✅ admin | Update user role |
+| PATCH | `/auth/users/{username}/toggle` | ✅ admin | Enable / disable user account |
+| DELETE | `/auth/users/{username}` | ✅ admin | Delete user account |
+| GET | `/admin/alert-settings` | ✅ admin | Get alert notification settings |
+| PATCH | `/admin/alert-settings` | ✅ admin | Update alert notification recipient |
+| POST | `/predict` | ❌ | Single flow real-time classification |
+| POST | `/predict/batch` | ❌ | Batch flow classification |
+| POST | `/explain` | ✅ viewer | Explainable AI feature contribution |
+| GET | `/assistant/insights` | ✅ viewer | AI-generated threat briefings |
+| POST | `/assistant/chat` | ✅ viewer | GenAI security copilot assistant chat |
+| GET | `/history` | ✅ viewer | Historical detection logs |
+| GET | `/stats` | ✅ viewer | Aggregate dashboard statistics |
+| GET | `/health` | ❌ | API health check endpoint |
+| GET | `/blocked-ips` | ✅ viewer | List active firewall blocked IPs |
+| POST | `/blocked-ips` | ✅ analyst | Block an IP address |
+| DELETE | `/blocked-ips/{ip}` | ✅ admin | Unblock an IP address |
+| POST | `/blocked-ips/bulk-block` | ✅ analyst | Bulk block IP addresses |
+| POST | `/blocked-ips/bulk-unblock` | ✅ admin | Bulk unblock IP addresses |
+| GET | `/blocked-ips/audit` | ✅ admin | Firewall block/unblock audit trail |
+| GET | `/capture/interfaces` | ✅ analyst | List available network interfaces |
+| POST | `/capture/start` | ✅ analyst | Start live packet capture |
+| POST | `/capture/stop` | ✅ analyst | Stop live packet capture |
+| GET | `/capture/status` | ✅ viewer | Current packet capture status |
+| GET | `/reports/export` | ✅ analyst | Export PDF security report |
+| POST | `/network/scan/arp` | ✅ analyst | Quick ARP network device scan |
+| POST | `/network/scan` | ✅ analyst | Full ARP + Nmap network device scan |
+| GET | `/network/devices` | ✅ viewer | Retrieve cached device scan list |
+| POST | `/admin/migrate-csv` | ✅ admin | Migrate legacy CSV data to SQLite |
+| GET | `/api/license/status` | ❌ | Check system license status |
+| POST | `/api/license/activate` | ✅ admin | Activate system license key |
 
 ---
 
 ## 🔒 Security Features
 
-- JWT tokens with expiry (60 min access, 7 day refresh)
-- PBKDF2-HMAC-SHA256 password hashing (260,000 iterations)
-- Rate limiting: 5 attempts → 15 min lockout
-- Protected IP ranges (loopback, multicast) never blocked
-- Thread-safe SQLite with WAL mode
-- Audit trail for all block/unblock events
-- Persistent SECRET_KEY via `.env` — tokens survive restarts
+- JWT access & refresh tokens with secure signatures & expiration.
+- **PBKDF2-HMAC-SHA256** password hashing with 260,000 iterations.
+- Rate limiting: 5 consecutive failed logins → 15-minute lockout.
+- Protected IP ranges (loopback, local gateway, multicast) guarded against accidental blocking.
+- Thread-safe SQLite databases with Write-Ahead Logging (WAL) enabled.
+- Cryptographic audit logging for all firewall block/unblock actions.
+- Persistent `SECRET_KEY` via `.env` to keep active sessions alive across server restarts.
 
 ---
 
 ## 📋 Requirements
 
-```
-fastapi
-uvicorn
-xgboost
-scikit-learn
-joblib
-pandas
-numpy
-scapy
-requests
-python-dotenv
-reportlab
-imbalanced-learn
-python-nmap
+```text
+pandas==2.2.2
+numpy==1.26.4
+scikit-learn==1.4.2
+xgboost==2.0.3
+imbalanced-learn==0.12.2
+joblib==1.4.0
+fastapi==0.111.0
+uvicorn==0.29.0
+pydantic==2.7.0
+typing_extensions>=4.12.2
+scapy==2.5.0
+python-dotenv==1.0.1
+requests==2.31.0
+reportlab==4.2.2
+python-nmap==0.7.1
 ```
 
-> **Note:** Also install [Nmap 7.99+](https://nmap.org/download.html) separately on your OS.
+> **System Note:** Install [Nmap 7.99+](https://nmap.org/download.html) and [Npcap](https://npcap.com/) separately on Windows.
 
 ---
 
@@ -394,8 +442,8 @@ python-nmap
 
 ## 📄 License
 
-MIT License — Free to use for educational purposes.
+MIT License — Free to use for educational and research purposes.
 
 ---
 
-> **NetGuard IDS** — *Protecting IoT Networks with Machine Learning* 🛡️
+> **NetGuard IDS** — *Protecting IoT Networks with Machine Learning & AI* 🛡️
