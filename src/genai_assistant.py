@@ -85,29 +85,57 @@ def _query_gemini_api(user_query: str, system_prompt: str) -> Optional[str]:
     if not gemini_key:
         return None
 
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={gemini_key}"
-    headers = {"Content-Type": "application/json"}
-    payload = {
-        "contents": [
-            {
-                "parts": [
-                    {"text": f"System Context:\n{system_prompt}\n\nUser Question: {user_query}"}
-                ]
-            }
-        ]
-    }
+    models_to_try = [
+        "gemini-flash-lite-latest",
+        "gemini-flash-latest",
+        "gemini-pro-latest"
+    ]
+
     try:
-        res = requests.post(url, headers=headers, json=payload, timeout=5)
-        if res.status_code == 200:
-            data = res.json()
-            candidates = data.get("candidates", [])
-            if candidates and "content" in candidates[0]:
-                parts = candidates[0]["content"].get("parts", [])
-                if parts and "text" in parts[0]:
-                    return parts[0]["text"].strip()
+        import ssl
+        from requests.adapters import HTTPAdapter
+        from urllib3.util.ssl_ import create_urllib3_context
+
+        class TLSAdapter(HTTPAdapter):
+            def init_poolmanager(self, *args, **kwargs):
+                ctx = create_urllib3_context()
+                ctx.check_hostname = False
+                ctx.verify_mode = ssl.CERT_NONE
+                kwargs['ssl_context'] = ctx
+                return super().init_poolmanager(*args, **kwargs)
+
+        s = requests.Session()
+        s.mount('https://', TLSAdapter())
+        s.trust_env = False
+        headers = {"Content-Type": "application/json"}
+        payload = {
+            "contents": [
+                {
+                    "parts": [
+                        {"text": f"System Context:\n{system_prompt}\n\nUser Question: {user_query}"}
+                    ]
+                }
+            ]
+        }
+
+        for model in models_to_try:
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={gemini_key}"
+            try:
+                res = s.post(url, headers=headers, json=payload, timeout=8)
+                if res.status_code == 200:
+                    data = res.json()
+                    candidates = data.get("candidates", [])
+                    if candidates and "content" in candidates[0]:
+                        parts = candidates[0]["content"].get("parts", [])
+                        if parts and "text" in parts[0]:
+                            return parts[0]["text"].strip()
+            except Exception:
+                continue
     except Exception:
         pass
     return None
+
+
 
 
 def _query_ollama_local(user_query: str, system_prompt: str) -> Optional[str]:
