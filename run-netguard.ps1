@@ -33,7 +33,8 @@ if (-not (Test-Path "react-dashboard\node_modules")) {
 }
 
 # ── Start Services ────────────────────────────────────────────
-$ApiPort = 8080
+$ApiPort = 8081
+
 if (Test-Path ".env") {
     $EnvFile = Get-Content ".env"
     foreach ($line in $EnvFile) {

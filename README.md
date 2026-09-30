@@ -104,7 +104,7 @@
 │                      NetGuard IDS v2.1                      │
 ├──────────────┬──────────────────────┬───────────────────────┤
 │  Capture     │   FastAPI Backend    │   React Dashboard     │
-│  (Scapy)     │   (Port 8080)        │   (Port 5174)         │
+│  (Scapy)     │   (Port 8081)        │   (Port 5174)         │
 │              │                      │                       │
 │ Network      │ /predict             │ Overview              │
 │ Packets  ──► │ /history             │ Capture Control       │
@@ -205,7 +205,7 @@ Run the unified PowerShell launcher script in Admin PowerShell:
 > 1. Verifies Python 3.11+ and Node.js 18+ prerequisites.
 > 2. Creates the Python `venv` and installs dependencies from `requirements.txt`.
 > 3. Installs frontend `node_modules` inside `react-dashboard`.
-> 4. Starts the FastAPI backend on `http://127.0.0.1:8080`.
+> 4. Starts the FastAPI backend on `http://127.0.0.1:8081`.
 > 5. Starts the React Dashboard on `http://localhost:5174`.
 > 6. Opens the web dashboard automatically in your default browser.
 
@@ -257,7 +257,7 @@ python src/train.py
 
 **Terminal 1 — API Backend** (Admin PowerShell / Terminal):
 ```powershell
-uvicorn api.main:app --host 0.0.0.0 --port 8080
+uvicorn api.main:app --host 0.0.0.0 --port 8081
 ```
 
 **Terminal 2 — React Dashboard**:
@@ -269,7 +269,7 @@ npm run dev
 
 #### 5. Access Services
 - **Dashboard**: [http://localhost:5174](http://localhost:5174)
-- **API Documentation**: [http://localhost:8080/docs](http://localhost:8080/docs)
+- **API Documentation**: [http://localhost:8081/docs](http://localhost:8081/docs)
 - **Default Login Credentials**: `admin` / `netguard123`
 
 ---
@@ -280,7 +280,7 @@ To run NetGuard IDS permanently in the background as Windows services using NSSM
 
 ```powershell
 # 1. Install NetGuard API Service (Admin PowerShell)
-nssm install NetGuard-API "C:\iot-ids\venv\Scripts\uvicorn.exe" "api.main:app --host 0.0.0.0 --port 8080"
+nssm install NetGuard-API "C:\iot-ids\venv\Scripts\uvicorn.exe" "api.main:app --host 0.0.0.0 --port 8081"
 nssm set NetGuard-API AppDirectory "C:\iot-ids"
 
 # 2. Install NetGuard React Dashboard Service (Port 5174)
@@ -313,7 +313,7 @@ Run the automated test suite against a running server:
 #### DoS/DDoS Classification Test
 ```powershell
 $body = Get-Content "dos_test.json" -Raw
-Invoke-RestMethod -Uri "http://localhost:8080/predict" -Method POST -ContentType "application/json" -Body $body
+Invoke-RestMethod -Uri "http://localhost:8081/predict" -Method POST -ContentType "application/json" -Body $body
 # Expected output: DOS_DDOS | 100% confidence | CRITICAL
 ```
 
@@ -323,9 +323,9 @@ Invoke-RestMethod -Uri "http://localhost:8080/predict" -Method POST -ContentType
 
 #### Network Device Scan API
 ```powershell
-$login = Invoke-RestMethod -Uri "http://localhost:8080/auth/login" -Method POST -ContentType "application/json" -Body '{"username":"admin","password":"netguard123"}'
+$login = Invoke-RestMethod -Uri "http://localhost:8081/auth/login" -Method POST -ContentType "application/json" -Body '{"username":"admin","password":"netguard123"}'
 $headers = @{Authorization = "Bearer $($login.access_token)"}
-Invoke-RestMethod -Uri "http://localhost:8080/network/scan/arp" -Method POST -Headers $headers
+Invoke-RestMethod -Uri "http://localhost:8081/network/scan/arp" -Method POST -Headers $headers
 ```
 
 ---

@@ -87,8 +87,9 @@ ALL_FEATURE_COLS   = FEATURE_COLS
 
 # ── API ───────────────────────────────────────────────────────
 API_HOST = "0.0.0.0"
-API_PORT = int(os.getenv("API_PORT", "8080"))
+API_PORT = int(os.getenv("API_PORT", "8081"))
 API_URL  = f"http://localhost:{API_PORT}"
+
 
 ALERT_CONFIDENCE_THRESHOLD = 0.85
 
