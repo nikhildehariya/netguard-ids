@@ -175,7 +175,7 @@ def _build_html_email(result: dict, source_ip: str) -> str:
         <!-- Action Button -->
         <tr>
           <td style="padding:0 32px 28px;" align="center">
-            <a href="http://localhost:5173" style="display:inline-block;background:linear-gradient(135deg,#0ea5e9,#6366f1);color:#fff;font-size:14px;font-weight:700;padding:14px 32px;border-radius:8px;text-decoration:none;letter-spacing:1px;">
+            <a href="http://localhost:5174" style="display:inline-block;background:linear-gradient(135deg,#0ea5e9,#6366f1);color:#fff;font-size:14px;font-weight:700;padding:14px 32px;border-radius:8px;text-decoration:none;letter-spacing:1px;">
               → OPEN NETGUARD DASHBOARD
             </a>
           </td>
@@ -219,7 +219,7 @@ def _send_email(result: dict, source_ip: str):
         f"Source IP   : {source_ip}\n"
         f"Timestamp   : {result['timestamp']}\n"
         f"{'='*40}\n"
-        f"Open dashboard: http://localhost:5173\n"
+        f"Open dashboard: http://localhost:5174\n"
     )
     msg.attach(MIMEText(plain, "plain"))
     msg.attach(MIMEText(_build_html_email(result, source_ip), "html"))
@@ -243,9 +243,9 @@ def _send_telegram(result: dict, source_ip: str):
     if source_ip and source_ip != "unknown":
         sig = hmac.new(SECRET_KEY.encode(), source_ip.encode(), hashlib.sha256).hexdigest()[:16]
         block_link = f"{API_URL}/api/telegram/block?ip={source_ip}&sig={sig}"
-        action_line = f"⚡ [🚫 Block IP (1 Hour)]({block_link}) | [Open Dashboard](http://localhost:5173)"
+        action_line = f"⚡ [🚫 Block IP (1 Hour)]({block_link}) | [Open Dashboard](http://localhost:5174)"
     else:
-        action_line = f"[Open Dashboard](http://localhost:5173)"
+        action_line = f"[Open Dashboard](http://localhost:5174)"
 
     message = (
         f"{sev_icon} *NetGuard IDS Alert*\n"
