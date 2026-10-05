@@ -57,7 +57,8 @@ if ($BackendRunning) {
     Write-Host "`n[4] Backend API is already running on port $ApiPort. Bypassing startup." -ForegroundColor Green
 } else {
     Write-Host "`n[4] Starting FastAPI backend on port $ApiPort..." -ForegroundColor Yellow
-    $BackendProcess = Start-Process -FilePath "venv\Scripts\python.exe" -ArgumentList "-m uvicorn api.main:app --host 127.0.0.1 --port $ApiPort" -PassThru -NoNewWindow
+    $BackendProcess = Start-Process -FilePath "venv\Scripts\python.exe" -ArgumentList "-m uvicorn api.main:app --host 0.0.0.0 --port $ApiPort" -PassThru -NoNewWindow
+
 }
 
 Write-Host "[5] Starting React dashboard on port 5174..." -ForegroundColor Yellow
