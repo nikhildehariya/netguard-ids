@@ -154,6 +154,17 @@ def explain_prediction(traffic_record: dict, prediction_result: dict) -> dict:
             })
             reasons.append(f"Sustained connection with large response payload ({tot_bwd_bytes:,.0f} bytes) indicating potential data exfiltration.")
 
+    if prediction in ["ZERO_DAY_ANOMALY"]:
+        anom_score = prediction_result.get("anomaly_score", confidence)
+        contributions.append({
+            "feature": "Isolation Forest Outlier",
+            "value": f"Anomaly Score: {anom_score * 100:.1f}%",
+            "contribution": 0.50,
+            "label": "Unsupervised Zero-Day Anomaly",
+            "severity": "critical"
+        })
+        reasons.append(f"Unsupervised Isolation Forest model detected a high-dimensional statistical anomaly (score: {anom_score * 100:.1f}%) deviating from normal network behavior baseline.")
+
     # Generic feature checks if specific rules didn't trigger
     if not contributions:
         for feat, threshold in BASELINE_THRESHOLDS.items():
@@ -191,6 +202,8 @@ def explain_prediction(traffic_record: dict, prediction_result: dict) -> dict:
             recommendations.append("Inspect Web Application Firewall (WAF) logs for SQLi or command injection signatures.")
         elif prediction == "INFILTRATION":
             recommendations.append("Audit internal endpoint for compromise and check outbound socket connections.")
+        elif prediction == "ZERO_DAY_ANOMALY":
+            recommendations.append("Quarantine flow for deep packet inspection (DPI) and capture raw payload for signature synthesis.")
     else:
         recommendations.append("No immediate action required. Traffic is within safe network limits.")
 

@@ -11,6 +11,7 @@ from datetime import datetime
 from collections import defaultdict
 
 from config import API_URL, AGENT_SECRET_KEY
+from stream_producer import dispatch_flow
 
 try:
     from scapy.all import sniff, IP, TCP, UDP, ICMP
@@ -282,7 +283,7 @@ def process_packet(pkt):
         if should_send and total_pkts >= 1:
             features = flow_to_features(f, f["src_ip"])
             threading.Thread(
-                target=send_to_api,
+                target=dispatch_flow,
                 args=(features,),
                 daemon=True
             ).start()
@@ -304,7 +305,7 @@ def flush_flows():
                 f = flows[k]
                 features = flow_to_features(f, f["src_ip"])
                 threading.Thread(
-                    target=send_to_api,
+                    target=dispatch_flow,
                     args=(features,),
                     daemon=True
                 ).start()

@@ -72,11 +72,12 @@ def _build_html_email(result: dict, source_ip: str) -> str:
     }.get(sev, "#94a3b8")
 
     pred_color = {
-        "BRUTE FORCE":  "#f97316",
-        "DOS DDOS":     "#ef4444",
-        "WEB ATTACK":   "#a78bfa",
-        "INFILTRATION": "#ec4899",
-        "NORMAL":       "#22d3a0",
+        "BRUTE FORCE":      "#f97316",
+        "DOS DDOS":         "#ef4444",
+        "WEB ATTACK":       "#a78bfa",
+        "INFILTRATION":     "#ec4899",
+        "ZERO DAY ANOMALY": "#dc2626",
+        "NORMAL":           "#22d3a0",
     }.get(pred, "#94a3b8")
 
     scores_rows = "".join(

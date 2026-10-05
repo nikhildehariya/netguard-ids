@@ -1,0 +1,37 @@
+# Production Dockerfile for NetGuard IoT-IDS FastAPI Backend
+FROM python:3.11-slim
+
+# Install system dependencies required for Scapy packet sniffing, Nmap, and network admin (iptables)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libpcap-dev \
+    nmap \
+    iptables \
+    iproute2 \
+    gcc \
+    g++ \
+    libpq-dev \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Install Python requirements
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy application directories
+COPY api/ ./api/
+COPY src/ ./src/
+COPY models/ ./models/
+COPY data/ ./data/
+COPY scripts/ ./scripts/
+COPY config.py .env* ./
+
+# Configure Python execution environment
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONPATH=/app
+
+EXPOSE 8000
+
+# Run FastAPI via Uvicorn
+CMD ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000"]

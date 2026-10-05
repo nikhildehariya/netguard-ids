@@ -10,8 +10,15 @@ REPORTS_DIR = BASE_DIR / "reports"
 BLOCKLIST_PATH = BASE_DIR / "logs" / "blocked_ips.csv"
 
 MODEL_PATH    = MODELS_DIR / "xgb_model.pkl"
+IFOREST_MODEL_PATH = MODELS_DIR / "iforest_model.pkl"
 # ENCODERS_PATH = MODELS_DIR / "encoders.pkl"
 SCALER_PATH   = MODELS_DIR / "scaler.pkl"
+
+KEYS_DIR         = BASE_DIR / "keys"
+PUBLIC_KEY_PATH  = KEYS_DIR / "license_public_key.pem"
+PRIVATE_KEY_PATH = KEYS_DIR / "license_private_key.pem"
+LICENSE_KEY_PATH = BASE_DIR / "license.key"
+GRACE_PERIOD_DAYS = 3
 
 # ── CIC-IDS2018 Labels ────────────────────────────────────────
 LABEL_MAP = {
@@ -44,11 +51,12 @@ LABEL_NAMES  = CLASS_NAMES
 NUM_CLASSES  = len(CLASS_NAMES)
 
 SEVERITY_MAP = {
-    "NORMAL":       "none",
-    "BRUTE_FORCE":  "high",
-    "DOS_DDOS":     "critical",
-    "WEB_ATTACK":   "high",
-    "INFILTRATION": "critical",
+    "NORMAL":           "none",
+    "BRUTE_FORCE":      "high",
+    "DOS_DDOS":         "critical",
+    "WEB_ATTACK":       "high",
+    "INFILTRATION":     "critical",
+    "ZERO_DAY_ANOMALY": "critical",
 }
 
 SEVERITY_COLOR = {
@@ -90,16 +98,24 @@ API_HOST = "0.0.0.0"
 API_PORT = int(os.getenv("API_PORT", "8081"))
 API_URL  = f"http://localhost:{API_PORT}"
 
+# ── Redis Stream Flow Buffer ─────────────────────────────────
+REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
+REDIS_PORT = int(os.getenv("REDIS_PORT", "6379"))
+REDIS_PASSWORD = os.getenv("REDIS_PASSWORD", None)
+REDIS_STREAM_KEY = os.getenv("REDIS_STREAM_KEY", "netguard:flow_stream")
+REDIS_CONSUMER_GROUP = os.getenv("REDIS_CONSUMER_GROUP", "netguard_inference_group")
+USE_REDIS_BUFFER = os.getenv("USE_REDIS_BUFFER", "true").lower() == "true"
 
 ALERT_CONFIDENCE_THRESHOLD = 0.85
 
 # ── Per-class confidence thresholds (industry grade) ─────────
 CONFIDENCE_THRESHOLDS = {
-    "NORMAL":      1.00,
-    "BRUTE_FORCE": 0.80,
-    "DOS_DDOS":    0.85,
-    "WEB_ATTACK":  0.80,
-    "INFILTRATION":0.45,  # Subtle by nature — lower threshold valid
+    "NORMAL":           1.00,
+    "BRUTE_FORCE":      0.80,
+    "DOS_DDOS":         0.85,
+    "WEB_ATTACK":       0.80,
+    "INFILTRATION":     0.45,  # Subtle by nature — lower threshold valid
+    "ZERO_DAY_ANOMALY": 0.70,
 }
 
 # ── XGBoost ───────────────────────────────────────────────────
@@ -110,6 +126,15 @@ XGB_PARAMS = {
     "subsample":        0.8,
     "colsample_bytree": 0.8,
     "eval_metric":      "mlogloss",
+    "random_state":     42,
+    "n_jobs":           -1,
+}
+
+# ── Isolation Forest (Zero-Day Anomaly Detection) ─────────────
+IFOREST_PARAMS = {
+    "n_estimators":     100,
+    "max_samples":      "auto",
+    "contamination":    0.03,  # 3% baseline anomaly expectation
     "random_state":     42,
     "n_jobs":           -1,
 }

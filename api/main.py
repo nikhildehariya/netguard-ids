@@ -28,7 +28,13 @@ from auth import (
 )
 from explainable import explain_prediction
 from genai_assistant import generate_threat_briefing, process_copilot_query
+from license import (
+    validate_license, get_active_license_status,
+    require_tier, require_feature, LicenseTier,
+    LICENSE_KEY_PATH
+)
 from config import AGENT_SECRET_KEY, SECRET_KEY
+from stream_consumer import consumer_worker
 
 
 try:
@@ -70,6 +76,18 @@ def startup():
     detector.load()
     print("[api] Detector ready.")
     print("[auth] Auth system ready.")
+    try:
+        consumer_worker.start(run_in_background=True)
+    except Exception as e:
+        print(f"[api] Redis Stream consumer startup warning: {e}")
+
+
+@app.on_event("shutdown")
+def shutdown():
+    try:
+        consumer_worker.stop()
+    except Exception:
+        pass
 
 
 # ── Pydantic models ────────────────────────────────────────────
@@ -447,7 +465,15 @@ def predict_batch(records: list[TrafficRecord], request: Request):
 
 @app.get("/health")
 def health():
-    return {"status": "running", "model_loaded": detector._loaded}
+    redis_active = bool(consumer_worker.client and consumer_worker.running)
+    return {
+        "status": "running",
+        "model_loaded": detector._loaded,
+        "redis_stream_buffer": {
+            "active": redis_active,
+            "worker_name": consumer_worker.consumer_name if redis_active else "inactive (fallback to direct HTTP)"
+        }
+    }
 
 
 @app.get("/history")
@@ -820,71 +846,34 @@ def scan_arp_only(request: Request, subnet: Optional[str] = None):
 class LicenseActivationRequest(BaseModel):
     key: str
 
-def check_license_key(key: str) -> dict:
-    if not key:
-        return {"status": "expired", "message": "No license key found"}
-    # Master developer key
-    if key == "NETGUARD-DEV-MASTER-999":
-        return {"status": "active", "expires_at": "2099-12-31", "client": "Nikhil Developer"}
-    try:
-        parts = key.split("-")
-        if len(parts) != 3 or parts[0] != "NETGUARD":
-            return {"status": "expired", "message": "Invalid license key format"}
-        
-        date_str = parts[1]
-        checksum = parts[2]
-        
-        # Verify basic checksum using SECRET_KEY to prevent fraud
-        expected_checksum = hashlib.sha256(f"{date_str}-{SECRET_KEY}".encode()).hexdigest()[:6].upper()
-        
-        if checksum != expected_checksum:
-            return {"status": "expired", "message": "License signature verification failed"}
-            
-        import datetime
-        exp_date = datetime.datetime.strptime(date_str, "%Y%m%d").date()
-        today = datetime.date.today()
-        
-        if exp_date < today:
-            return {"status": "expired", "expires_at": str(exp_date), "message": f"License expired on {exp_date}"}
-            
-        return {"status": "active", "expires_at": str(exp_date), "client": "Valued NetGuard Client"}
-    except Exception as e:
-        return {"status": "expired", "message": f"License check error: {str(e)}"}
-
 @app.get("/api/license/status")
 def get_license_status():
-    # Read LICENSE_KEY from env, fallback to config
-    from dotenv import dotenv_values
-    config_env = dotenv_values(".env")
-    key = config_env.get("LICENSE_KEY") or os.environ.get("LICENSE_KEY", "")
-    return check_license_key(key)
+    val = get_active_license_status(force_refresh=True)
+    return val.to_dict()
 
 @app.post("/api/license/activate")
 def activate_license(req: LicenseActivationRequest):
-    val = check_license_key(req.key)
-    if val["status"] != "active":
-        raise HTTPException(status_code=400, detail=val["message"])
-    
-    # Save the key into .env file
-    env_path = Path(__file__).resolve().parent.parent / ".env"
-    lines = []
-    key_written = False
-    if env_path.exists():
-        with open(env_path, "r") as f:
-            for line in f:
-                if line.strip().startswith("LICENSE_KEY="):
-                    lines.append(f"LICENSE_KEY={req.key}\n")
-                    key_written = True
-                else:
-                    lines.append(line)
-    if not key_written:
-        lines.append(f"LICENSE_KEY={req.key}\n")
-    
-    with open(env_path, "w") as f:
-        f.writelines(lines)
-        
-    os.environ["LICENSE_KEY"] = req.key
-    return {"message": "License successfully activated!", "expires_at": val["expires_at"], "client": val["client"]}
+    val = validate_license(req.key.strip())
+    if not val.is_valid:
+        raise HTTPException(status_code=400, detail=val.message)
+
+    try:
+        LICENSE_KEY_PATH.parent.mkdir(parents=True, exist_ok=True)
+        with open(LICENSE_KEY_PATH, "w", encoding="utf-8") as f:
+            f.write(req.key.strip())
+        os.environ["NETGUARD_LICENSE_KEY"] = req.key.strip()
+        os.environ["LICENSE_KEY"] = req.key.strip()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to save license key: {e}")
+
+    return {
+        "message": "License successfully activated!",
+        "status": val.status.value,
+        "tier": val.payload.tier.value if val.payload else None,
+        "licensee": val.payload.licensee if val.payload else None,
+        "max_devices": val.payload.max_devices if val.payload else None,
+        "days_remaining": val.days_remaining
+    }
 
 
 # ══════════════════════════════════════════════════════════════
@@ -894,6 +883,11 @@ def activate_license(req: LicenseActivationRequest):
 @app.post("/explain")
 def explain_traffic(req: ExplainRequest, request: Request):
     require_permission(request, "view")
+    if not require_tier(LicenseTier.PRO):
+        raise HTTPException(
+            status_code=402,
+            detail="Explainable AI diagnostics require Pro or Enterprise License Tier."
+        )
     try:
         traffic_data = req.record
         if req.prediction:
@@ -909,6 +903,11 @@ def explain_traffic(req: ExplainRequest, request: Request):
 @app.get("/assistant/insights")
 def assistant_insights(request: Request):
     require_permission(request, "view")
+    if not require_tier(LicenseTier.ENTERPRISE):
+        raise HTTPException(
+            status_code=402,
+            detail="GenAI Threat Assistant requires Enterprise License Tier."
+        )
     try:
         return generate_threat_briefing()
     except Exception as e:
@@ -918,6 +917,11 @@ def assistant_insights(request: Request):
 @app.post("/assistant/chat")
 def assistant_chat(req: AssistantQueryRequest, request: Request):
     require_permission(request, "view")
+    if not require_tier(LicenseTier.ENTERPRISE):
+        raise HTTPException(
+            status_code=402,
+            detail="GenAI Assistant Chat requires Enterprise License Tier."
+        )
     try:
         if not req.query.strip():
             raise HTTPException(status_code=400, detail="Query prompt cannot be empty")

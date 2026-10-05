@@ -1,0 +1,32 @@
+version: '3.8'
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    container_name: netguard_api
+    restart: unless-stopped
+    # Privileges required for raw packet sniffing (Scapy) & network firewall actions (iptables)
+    cap_add:
+      - NET_RAW
+      - NET_ADMIN
+    # network_mode: "host" gives container direct access to physical host network interfaces
+    network_mode: "host"
+    env_file:
+      - .env
+    volumes:
+      - ./logs:/app/logs
+      - ./models:/app/models
+      - ./reports:/app/reports
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    container_name: netguard_frontend
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    depends_on:
+      - api
