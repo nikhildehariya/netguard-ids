@@ -13,7 +13,7 @@ from pathlib import Path
 from datetime import datetime
 from typing import Optional, List, Dict
 
-from database import get_db_connection, init_pg_db
+from database import get_db_connection, release_db_connection
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -40,7 +40,7 @@ def _get_recent_summary_context(hours: int = 24) -> Dict:
                     "by_class": {r["prediction"]: r["cnt"] for r in rows}
                 }
         finally:
-            conn.close()
+            release_db_connection(conn)
     except Exception as e:
         print(f"[genai] DB summary context error: {e}")
         return {"total": 0, "attacks": 0, "by_class": {}}

@@ -1,10 +1,7 @@
 import psycopg2
 import psycopg2.extras
 
-from database import get_db_connection, init_pg_db
-
-def _ensure_schema() -> None:
-    init_pg_db()
+from database import get_db_connection, release_db_connection
 
 def _get_default_admin_email(conn) -> str:
     with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
@@ -25,7 +22,7 @@ def get_alert_email_target() -> str:
                 return configured
             return _get_default_admin_email(conn)
     finally:
-        conn.close()
+        release_db_connection(conn)
 
 def get_alert_settings() -> dict:
     conn = get_db_connection()
@@ -44,7 +41,7 @@ def get_alert_settings() -> dict:
                 "updated_at": str(updated_at) if updated_at else None,
             }
     finally:
-        conn.close()
+        release_db_connection(conn)
 
 def update_alert_to_email(email: str) -> dict:
     value = (email or "").strip()
@@ -63,5 +60,5 @@ def update_alert_to_email(email: str) -> dict:
             )
         conn.commit()
     finally:
-        conn.close()
+        release_db_connection(conn)
     return get_alert_settings()

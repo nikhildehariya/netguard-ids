@@ -26,7 +26,7 @@ from config import (
 )
 from blocklist import block_ip
 from alert_settings import get_alert_email_target
-from database import get_db_connection, init_pg_db
+from database import get_db_connection, release_db_connection
 
 _db_lock = threading.Lock()
 
@@ -55,7 +55,7 @@ def _log_to_db(result: dict, source_ip: str = "unknown",
             conn.rollback()
             print(f"[alert] DB Log error: {e}")
         finally:
-            conn.close()
+            release_db_connection(conn)
 
 
 # ── Professional HTML Email ────────────────────────────────────
@@ -256,16 +256,18 @@ def _send_telegram(result: dict, source_ip: str):
 # ── Auto-block ─────────────────────────────────────────────────
 def _recent_attack_count(source_ip: str) -> int:
     with _db_lock:
-        conn = _get_db()
+        conn = get_db_connection()
         try:
-            row = conn.execute("""
-                SELECT COUNT(*) FROM detections
-                WHERE source_ip=? AND severity != 'none'
-                AND confidence >= ?
-            """, (source_ip, AUTO_BLOCK_CONFIDENCE)).fetchone()
-            return row[0] if row else 0
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT COUNT(*) FROM detections
+                    WHERE source_ip=%s AND severity != 'none'
+                    AND confidence >= %s
+                """, (source_ip, AUTO_BLOCK_CONFIDENCE))
+                row = cur.fetchone()
+                return row[0] if row else 0
         finally:
-            conn.close()
+            release_db_connection(conn)
 
 
 def _maybe_auto_block(result: dict, source_ip: str):

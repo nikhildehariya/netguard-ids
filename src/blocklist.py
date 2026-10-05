@@ -28,7 +28,7 @@ import psycopg2
 import psycopg2.extras
 
 import config
-from database import get_db_connection, init_pg_db
+from database import get_db_connection, release_db_connection
 from scanner import _get_default_gateway, _get_local_ip
 
 # ── Thread safety ──────────────────────────────────────────────
@@ -186,7 +186,7 @@ def block_ip(
             conn.rollback()
             return {"blocked": False, "message": str(e), "ip": ip}
         finally:
-            conn.close()
+            release_db_connection(conn)
 
 def unblock_ip(ip: str, unblocked_by: str = "admin") -> dict:
     addr = _parse_ip(ip)
@@ -222,7 +222,7 @@ def unblock_ip(ip: str, unblocked_by: str = "admin") -> dict:
             conn.rollback()
             return {"unblocked": False, "message": str(e), "ip": ip}
         finally:
-            conn.close()
+            release_db_connection(conn)
 
 def list_blocked_ips() -> list[dict]:
     _expire_ttl()
@@ -238,7 +238,7 @@ def list_blocked_ips() -> list[dict]:
                 rows = cur.fetchall()
                 return [dict(r) for r in rows]
         finally:
-            conn.close()
+            release_db_connection(conn)
 
 def get_block_audit(ip: Optional[str] = None, limit: int = 200) -> list[dict]:
     with _lock:
@@ -258,7 +258,7 @@ def get_block_audit(ip: Optional[str] = None, limit: int = 200) -> list[dict]:
                 rows = cur.fetchall()
                 return [dict(r) for r in rows]
         finally:
-            conn.close()
+            release_db_connection(conn)
 
 def is_blocked(ip: str) -> bool:
     addr = _parse_ip(ip)
@@ -275,7 +275,7 @@ def is_blocked(ip: str) -> bool:
                 )
                 return cur.fetchone() is not None
         finally:
-            conn.close()
+            release_db_connection(conn)
 
 def bulk_block(ips: list[str], reason: str, blocked_by: str = "system") -> dict:
     results: dict = {"blocked": [], "skipped": [], "failed": []}
@@ -320,4 +320,4 @@ def _expire_ttl():
         except Exception:
             conn.rollback()
         finally:
-            conn.close()
+            release_db_connection(conn)
