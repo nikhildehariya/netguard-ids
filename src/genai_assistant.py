@@ -5,38 +5,45 @@
 # =============================================================
 
 import os
-import sqlite3
 import requests
 import json
+import psycopg2
+import psycopg2.extras
 from pathlib import Path
 from datetime import datetime
 from typing import Optional, List, Dict
 
+from database import get_db_connection, init_pg_db
+
 BASE_DIR = Path(__file__).resolve().parent.parent
-DB_PATH = BASE_DIR / "logs" / "detections.db"
 
 def _get_recent_summary_context(hours: int = 24) -> Dict:
-    """Fetch recent detection context from SQLite database."""
-    if not DB_PATH.exists():
-        return {"total": 0, "attacks": 0, "by_class": {}}
-
+    """Fetch recent detection context from PostgreSQL database."""
     try:
-        conn = sqlite3.connect(str(DB_PATH), timeout=5)
-        conn.row_factory = sqlite3.Row
-        total = conn.execute("SELECT COUNT(*) FROM detections WHERE mode='live'").fetchone()[0]
-        attacks = conn.execute(
-            "SELECT COUNT(*) FROM detections WHERE mode='live' AND severity != 'none'"
-        ).fetchone()[0]
-        rows = conn.execute("""
-            SELECT prediction, COUNT(*) as cnt FROM detections
-            WHERE mode='live' GROUP BY prediction
-        """).fetchall()
-        conn.close()
-        return {
-            "total": total,
-            "attacks": attacks,
-            "by_class": {r["prediction"]: r["cnt"] for r in rows}
-        }
+        conn = get_db_connection()
+        try:
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                cur.execute("SELECT COUNT(*) as cnt FROM detections WHERE mode='live'")
+                total = cur.fetchone()["cnt"]
+
+                cur.execute("SELECT COUNT(*) as cnt FROM detections WHERE mode='live' AND severity != 'none'")
+                attacks = cur.fetchone()["cnt"]
+
+                cur.execute("""
+                    SELECT prediction, COUNT(*) as cnt FROM detections
+                    WHERE mode='live' GROUP BY prediction
+                """)
+                rows = cur.fetchall()
+                return {
+                    "total": total,
+                    "attacks": attacks,
+                    "by_class": {r["prediction"]: r["cnt"] for r in rows}
+                }
+        finally:
+            conn.close()
+    except Exception as e:
+        print(f"[genai] DB summary context error: {e}")
+        return {"total": 0, "attacks": 0, "by_class": {}}
     except Exception as e:
         return {"total": 0, "attacks": 0, "by_class": {}, "error": str(e)}
 

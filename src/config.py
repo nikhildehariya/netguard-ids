@@ -123,6 +123,15 @@ ALERT_PASS = os.getenv("ALERT_PASSWORD", "")
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "")
 
+# ── PostgreSQL Database Config ───────────────────────────────
+DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://neondb_owner:npg_qmrcY0I9NEgF@ep-lively-glitter-b5u7jwdv-pooler.c-7.us-east-2.aws.neon.tech/neondb?sslmode=require")
+POSTGRES_HOST = os.getenv("POSTGRES_HOST", "ep-lively-glitter-b5u7jwdv-pooler.c-7.us-east-2.aws.neon.tech")
+POSTGRES_PORT = int(os.getenv("POSTGRES_PORT", "5432"))
+POSTGRES_DB = os.getenv("POSTGRES_DB", "neondb")
+POSTGRES_USER = os.getenv("POSTGRES_USER", "neondb_owner")
+POSTGRES_PASSWORD = os.getenv("POSTGRES_PASSWORD", "npg_qmrcY0I9NEgF")
+POSTGRES_SSLMODE = os.getenv("POSTGRES_SSLMODE", "require")
+
 # ── Dashboard Auth ────────────────────────────────────────────
 # FIX: single definition only; loaded from .env with secure default
 DASHBOARD_USERNAME = os.getenv("DASHBOARD_USERNAME", "admin")

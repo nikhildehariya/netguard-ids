@@ -1,17 +1,17 @@
 """
 blocklist.py — NetGuard IDS v2.1
-Industry-grade IP blocking engine
+Industry-grade IP blocking engine (PostgreSQL backed)
 
 Layers:
   1. Windows Firewall (netsh advfirewall) — host-based, always active
-  2. SPAN/TAP mode — future: push block to network switch via SSH/SNMP
-  3. Persistent SQLite store — survives restarts, full audit trail
+  2. SPAN/TAP mode — push block to network switch via SSH/SNMP
+  3. Persistent PostgreSQL store — survives restarts, full audit trail
 
 Features:
   - Block / Unblock with reason, actor, timestamp
   - TTL-based auto-expiry (optional)
   - Full audit log (every block/unblock/expire event)
-  - Admin-only unblock enforcement (enforced at API layer)
+  - Admin-only unblock enforcement
   - Loopback / protected range guard
   - Bulk block / unblock
   - Thread-safe
@@ -20,20 +20,16 @@ Features:
 
 import ipaddress
 import platform
-import sqlite3
 import subprocess
 import threading
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
 from typing import Optional
+import psycopg2
+import psycopg2.extras
 
 import config
+from database import get_db_connection, init_pg_db
 from scanner import _get_default_gateway, _get_local_ip
-
-# ── Paths ──────────────────────────────────────────────────────
-_BASE = Path(__file__).resolve().parent.parent / "logs"
-DB_PATH = _BASE / "blocklist.db"
-_BASE.mkdir(parents=True, exist_ok=True)
 
 # ── Thread safety ──────────────────────────────────────────────
 _lock = threading.Lock()
@@ -47,85 +43,37 @@ _PROTECTED = [
     ipaddress.ip_network("255.255.255.255/32"),
 ]
 
-# ── DB schema ──────────────────────────────────────────────────
-_SCHEMA = """
-CREATE TABLE IF NOT EXISTS blocked_ips (
-    ip          TEXT PRIMARY KEY,
-    reason      TEXT NOT NULL,
-    blocked_by  TEXT NOT NULL DEFAULT 'system',
-    blocked_at  TEXT NOT NULL,
-    expires_at  TEXT,
-    layer       TEXT NOT NULL DEFAULT 'firewall',
-    active      INTEGER NOT NULL DEFAULT 1
-);
-
-CREATE TABLE IF NOT EXISTS block_audit (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    event       TEXT NOT NULL,
-    ip          TEXT NOT NULL,
-    actor       TEXT NOT NULL DEFAULT 'system',
-    reason      TEXT,
-    timestamp   TEXT NOT NULL,
-    detail      TEXT
-);
-
-CREATE INDEX IF NOT EXISTS idx_blocked_active ON blocked_ips(active);
-CREATE INDEX IF NOT EXISTS idx_audit_ip       ON block_audit(ip);
-CREATE INDEX IF NOT EXISTS idx_audit_ts       ON block_audit(timestamp);
-"""
-
-
-def _db() -> sqlite3.Connection:
-    conn = sqlite3.connect(str(DB_PATH), timeout=10)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL")
-    conn.executescript(_SCHEMA)
-    return conn
-
-
-def _audit(conn: sqlite3.Connection, event: str, ip: str,
+def _audit(conn, event: str, ip: str,
            actor: str = "system", reason: str = "", detail: str = ""):
-    conn.execute(
-        "INSERT INTO block_audit(event, ip, actor, reason, timestamp, detail) "
-        "VALUES (?,?,?,?,?,?)",
-        (event, ip, actor, reason,
-         datetime.now(timezone.utc).isoformat(timespec="seconds"), detail)
-    )
-
+    with conn.cursor() as cur:
+        cur.execute(
+            "INSERT INTO block_audit(event, ip, actor, reason, timestamp, detail) "
+            "VALUES (%s,%s,%s,%s,%s,%s)",
+            (event, ip, actor, reason,
+             datetime.now(timezone.utc).isoformat(timespec="seconds"), detail)
+        )
 
 # ── IP validation ──────────────────────────────────────────────
-
 def _parse_ip(ip: str):
     try:
         return ipaddress.ip_address(ip.strip())
     except ValueError:
         return None
 
-
 def _is_protected(addr) -> bool:
-    # 1. Check loopback and protected subnets
     if any(addr in net for net in _PROTECTED):
         return True
-
-    # 2. Check local gateway
     gw = _get_default_gateway()
     if gw and str(addr) == gw:
         return True
-
-    # 3. Check local host IP
     local_ip = _get_local_ip()
     if local_ip and str(addr) == local_ip:
         return True
-
-    # 4. Check configured whitelisted IPs
     if str(addr) in config.WHITELISTED_IPS:
         return True
-
     return False
 
-
 # ── Firewall layer ─────────────────────────────────────────────
-
 def _fw_block(ip: str) -> tuple[bool, str]:
     system = platform.system().lower()
     if "windows" in system:
@@ -157,7 +105,6 @@ def _fw_block(ip: str) -> tuple[bool, str]:
         return True, "iptables rules added (INPUT+OUTPUT+FORWARD)"
     return False, f"Unsupported OS: {system}"
 
-
 def _fw_unblock(ip: str) -> tuple[bool, str]:
     system = platform.system().lower()
     if "windows" in system:
@@ -179,9 +126,7 @@ def _fw_unblock(ip: str) -> tuple[bool, str]:
         return True, "iptables rules removed"
     return False, f"Unsupported OS: {system}"
 
-
 # ── Public API ─────────────────────────────────────────────────
-
 def block_ip(
     ip: str,
     reason: str = "Auto-blocked by IDS",
@@ -198,48 +143,50 @@ def block_ip(
     ip = str(addr)
 
     with _lock:
-        conn = _db()
+        conn = get_db_connection()
         try:
-            row = conn.execute(
-                "SELECT active FROM blocked_ips WHERE ip=?", (ip,)
-            ).fetchone()
-            if row and row["active"]:
-                return {"blocked": False, "message": f"{ip} is already blocked", "ip": ip}
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                cur.execute("SELECT active FROM blocked_ips WHERE ip=%s", (ip,))
+                row = cur.fetchone()
+                if row and row["active"]:
+                    return {"blocked": False, "message": f"{ip} is already blocked", "ip": ip}
 
-            detail = ""
-            if layer in ("firewall", "both"):
-                ok, detail = _fw_block(ip)
-                if not ok:
-                    return {"blocked": False, "message": f"Firewall error: {detail}", "ip": ip}
+                detail = ""
+                if layer in ("firewall", "both"):
+                    ok, detail = _fw_block(ip)
+                    if not ok:
+                        return {"blocked": False, "message": f"Firewall error: {detail}", "ip": ip}
 
-            if layer in ("span", "both"):
-                detail += " | SPAN ACL: configure SPAN_HOST in .env to enable"
+                if layer in ("span", "both"):
+                    detail += " | SPAN ACL: configure SPAN_HOST in .env to enable"
 
-            expires_at = None
-            if ttl_seconds:
-                expires_at = (
-                    datetime.now(timezone.utc) + timedelta(seconds=ttl_seconds)
-                ).isoformat(timespec="seconds")
+                expires_at = None
+                if ttl_seconds:
+                    expires_at = (
+                        datetime.now(timezone.utc) + timedelta(seconds=ttl_seconds)
+                    ).isoformat(timespec="seconds")
 
-            now = datetime.now(timezone.utc).isoformat(timespec="seconds")
-            conn.execute("""
-                INSERT INTO blocked_ips(ip, reason, blocked_by, blocked_at, expires_at, layer, active)
-                VALUES (?,?,?,?,?,?,1)
-                ON CONFLICT(ip) DO UPDATE SET
-                    reason=excluded.reason, blocked_by=excluded.blocked_by,
-                    blocked_at=excluded.blocked_at, expires_at=excluded.expires_at,
-                    layer=excluded.layer, active=1
-            """, (ip, reason, blocked_by, now, expires_at, layer))
-            _audit(conn, "BLOCK", ip, actor=blocked_by, reason=reason, detail=detail)
+                now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+                cur.execute("""
+                    INSERT INTO blocked_ips(ip, reason, blocked_by, blocked_at, expires_at, layer, active)
+                    VALUES (%s,%s,%s,%s,%s,%s,1)
+                    ON CONFLICT(ip) DO UPDATE SET
+                        reason=EXCLUDED.reason, blocked_by=EXCLUDED.blocked_by,
+                        blocked_at=EXCLUDED.blocked_at, expires_at=EXCLUDED.expires_at,
+                        layer=EXCLUDED.layer, active=1
+                """, (ip, reason, blocked_by, now, expires_at, layer))
+                _audit(conn, "BLOCK", ip, actor=blocked_by, reason=reason, detail=detail)
+
             conn.commit()
-
             msg = f"Blocked {ip}"
             if expires_at:
                 msg += f" (expires {expires_at})"
             return {"blocked": True, "message": msg, "ip": ip, "expires_at": expires_at}
+        except Exception as e:
+            conn.rollback()
+            return {"blocked": False, "message": str(e), "ip": ip}
         finally:
             conn.close()
-
 
 def unblock_ip(ip: str, unblocked_by: str = "admin") -> dict:
     addr = _parse_ip(ip)
@@ -249,64 +196,69 @@ def unblock_ip(ip: str, unblocked_by: str = "admin") -> dict:
     ip = str(addr)
 
     with _lock:
-        conn = _db()
+        conn = get_db_connection()
         try:
-            row = conn.execute(
-                "SELECT active, layer FROM blocked_ips WHERE ip=? AND active=1", (ip,)
-            ).fetchone()
-            if not row:
-                return {"unblocked": False, "message": f"{ip} is not currently blocked", "ip": ip}
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                cur.execute(
+                    "SELECT active, layer FROM blocked_ips WHERE ip=%s AND active=1", (ip,)
+                )
+                row = cur.fetchone()
+                if not row:
+                    return {"unblocked": False, "message": f"{ip} is not currently blocked", "ip": ip}
 
-            layer  = row["layer"]
-            detail = ""
-            if layer in ("firewall", "both"):
-                _, detail = _fw_unblock(ip)
-            if layer in ("span", "both"):
-                detail += " | SPAN ACL removal: pending"
+                layer  = row["layer"]
+                detail = ""
+                if layer in ("firewall", "both"):
+                    _, detail = _fw_unblock(ip)
+                if layer in ("span", "both"):
+                    detail += " | SPAN ACL removal: pending"
 
-            conn.execute("UPDATE blocked_ips SET active=0 WHERE ip=?", (ip,))
-            _audit(conn, "UNBLOCK", ip, actor=unblocked_by, detail=detail)
+                cur.execute("UPDATE blocked_ips SET active=0 WHERE ip=%s", (ip,))
+                _audit(conn, "UNBLOCK", ip, actor=unblocked_by, detail=detail)
+
             conn.commit()
             return {"unblocked": True, "message": f"Unblocked {ip}", "ip": ip}
+        except Exception as e:
+            conn.rollback()
+            return {"unblocked": False, "message": str(e), "ip": ip}
         finally:
             conn.close()
-
 
 def list_blocked_ips() -> list[dict]:
-    """Return all currently active blocked IPs."""
     _expire_ttl()
     with _lock:
-        conn = _db()
+        conn = get_db_connection()
         try:
-            rows = conn.execute("""
-                SELECT ip, reason, blocked_by, blocked_at, expires_at, layer
-                FROM blocked_ips WHERE active=1
-                ORDER BY blocked_at DESC
-            """).fetchall()
-            return [dict(r) for r in rows]
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                cur.execute("""
+                    SELECT ip, reason, blocked_by, blocked_at, expires_at, layer
+                    FROM blocked_ips WHERE active=1
+                    ORDER BY blocked_at DESC
+                """)
+                rows = cur.fetchall()
+                return [dict(r) for r in rows]
         finally:
             conn.close()
-
 
 def get_block_audit(ip: Optional[str] = None, limit: int = 200) -> list[dict]:
-    """Return full audit log, optionally filtered by IP."""
     with _lock:
-        conn = _db()
+        conn = get_db_connection()
         try:
-            if ip:
-                rows = conn.execute(
-                    "SELECT * FROM block_audit WHERE ip=? ORDER BY timestamp DESC LIMIT ?",
-                    (ip, limit)
-                ).fetchall()
-            else:
-                rows = conn.execute(
-                    "SELECT * FROM block_audit ORDER BY timestamp DESC LIMIT ?",
-                    (limit,)
-                ).fetchall()
-            return [dict(r) for r in rows]
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                if ip:
+                    cur.execute(
+                        "SELECT * FROM block_audit WHERE ip=%s ORDER BY timestamp DESC LIMIT %s",
+                        (ip, limit)
+                    )
+                else:
+                    cur.execute(
+                        "SELECT * FROM block_audit ORDER BY timestamp DESC LIMIT %s",
+                        (limit,)
+                    )
+                rows = cur.fetchall()
+                return [dict(r) for r in rows]
         finally:
             conn.close()
-
 
 def is_blocked(ip: str) -> bool:
     addr = _parse_ip(ip)
@@ -315,18 +267,17 @@ def is_blocked(ip: str) -> bool:
     ip = str(addr)
     _expire_ttl()
     with _lock:
-        conn = _db()
+        conn = get_db_connection()
         try:
-            row = conn.execute(
-                "SELECT 1 FROM blocked_ips WHERE ip=? AND active=1", (ip,)
-            ).fetchone()
-            return row is not None
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT 1 FROM blocked_ips WHERE ip=%s AND active=1", (ip,)
+                )
+                return cur.fetchone() is not None
         finally:
             conn.close()
 
-
 def bulk_block(ips: list[str], reason: str, blocked_by: str = "system") -> dict:
-    """Block multiple IPs. Returns summary."""
     results: dict = {"blocked": [], "skipped": [], "failed": []}
     for ip in ips:
         r = block_ip(ip, reason=reason, blocked_by=blocked_by)
@@ -338,9 +289,7 @@ def bulk_block(ips: list[str], reason: str, blocked_by: str = "system") -> dict:
             results["failed"].append({"ip": ip, "reason": r["message"]})
     return results
 
-
 def bulk_unblock(ips: list[str], unblocked_by: str = "admin") -> dict:
-    """Unblock multiple IPs. Returns summary."""
     results: dict = {"unblocked": [], "failed": []}
     for ip in ips:
         r = unblock_ip(ip, unblocked_by=unblocked_by)
@@ -350,23 +299,25 @@ def bulk_unblock(ips: list[str], unblocked_by: str = "admin") -> dict:
             results["failed"].append({"ip": ip, "reason": r["message"]})
     return results
 
-
 def _expire_ttl():
-    """Auto-expire TTL-based blocks."""
     now = datetime.now(timezone.utc).isoformat(timespec="seconds")
     with _lock:
-        conn = _db()
+        conn = get_db_connection()
         try:
-            expired = conn.execute("""
-                SELECT ip, layer FROM blocked_ips
-                WHERE active=1 AND expires_at IS NOT NULL AND expires_at <= ?
-            """, (now,)).fetchall()
-            for row in expired:
-                if row["layer"] in ("firewall", "both"):
-                    _fw_unblock(row["ip"])
-                conn.execute("UPDATE blocked_ips SET active=0 WHERE ip=?", (row["ip"],))
-                _audit(conn, "EXPIRED", row["ip"], actor="system", detail="TTL expired")
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                cur.execute("""
+                    SELECT ip, layer FROM blocked_ips
+                    WHERE active=1 AND expires_at IS NOT NULL AND expires_at <= %s
+                """, (now,))
+                expired = cur.fetchall()
+                for row in expired:
+                    if row["layer"] in ("firewall", "both"):
+                        _fw_unblock(row["ip"])
+                    cur.execute("UPDATE blocked_ips SET active=0 WHERE ip=%s", (row["ip"],))
+                    _audit(conn, "EXPIRED", row["ip"], actor="system", detail="TTL expired")
             if expired:
                 conn.commit()
+        except Exception:
+            conn.rollback()
         finally:
             conn.close()

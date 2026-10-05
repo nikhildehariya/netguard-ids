@@ -7,7 +7,6 @@ import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-import sqlite3
 import smtplib
 import threading
 from email.mime.multipart import MIMEMultipart
@@ -27,59 +26,34 @@ from config import (
 )
 from blocklist import block_ip
 from alert_settings import get_alert_email_target
-
-# ── DB Path ────────────────────────────────────────────────────
-DB_PATH = BASE_DIR / "logs" / "detections.db"
-DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+from database import get_db_connection, init_pg_db
 
 _db_lock = threading.Lock()
-
-# ── Schema ─────────────────────────────────────────────────────
-_SCHEMA = """
-CREATE TABLE IF NOT EXISTS detections (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    timestamp   TEXT    NOT NULL,
-    prediction  TEXT    NOT NULL,
-    confidence  REAL    NOT NULL,
-    severity    TEXT    NOT NULL DEFAULT 'none',
-    source_ip   TEXT    NOT NULL DEFAULT 'unknown',
-    flow_id     TEXT    NOT NULL DEFAULT '',
-    mode        TEXT    NOT NULL DEFAULT 'live'
-);
-CREATE INDEX IF NOT EXISTS idx_det_ts         ON detections(timestamp);
-CREATE INDEX IF NOT EXISTS idx_det_prediction ON detections(prediction);
-CREATE INDEX IF NOT EXISTS idx_det_source_ip  ON detections(source_ip);
-CREATE INDEX IF NOT EXISTS idx_det_severity   ON detections(severity);
-"""
-
-def _get_db() -> sqlite3.Connection:
-    conn = sqlite3.connect(str(DB_PATH), timeout=10)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL")
-    conn.executescript(_SCHEMA)
-    return conn
-
 
 # ── Logging ────────────────────────────────────────────────────
 def _log_to_db(result: dict, source_ip: str = "unknown",
                flow_id: str = "", test_mode: bool = False):
     with _db_lock:
-        conn = _get_db()
+        conn = get_db_connection()
         try:
-            conn.execute("""
-                INSERT INTO detections
-                    (timestamp, prediction, confidence, severity, source_ip, flow_id, mode)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-            """, (
-                result["timestamp"],
-                result["prediction"],
-                float(result["confidence"]),
-                result["severity"],
-                source_ip,
-                flow_id,
-                "test" if test_mode else "live",
-            ))
+            with conn.cursor() as cur:
+                cur.execute("""
+                    INSERT INTO detections
+                        (timestamp, prediction, confidence, severity, source_ip, flow_id, mode)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s)
+                """, (
+                    result["timestamp"],
+                    result["prediction"],
+                    float(result["confidence"]),
+                    result["severity"],
+                    source_ip,
+                    flow_id,
+                    "test" if test_mode else "live",
+                ))
             conn.commit()
+        except Exception as e:
+            conn.rollback()
+            print(f"[alert] DB Log error: {e}")
         finally:
             conn.close()
 
