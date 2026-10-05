@@ -63,28 +63,44 @@ function AuthScreen({ onLogin }) {
   });
 
   const handleSubmit = async () => {
-    setErr(""); setLoading(true);
+    if (!form.username.trim() || !form.password.trim()) {
+      setErr("Please enter both username and password");
+      return;
+    }
+    setErr("");
+    setLoading(true);
     try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 8000);
+
       const res = await fetch(`${API}/auth/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username: form.username, password: form.password })
+        body: JSON.stringify({ username: form.username.trim(), password: form.password }),
+        signal: controller.signal
       });
+      clearTimeout(timeoutId);
       const data = await res.json();
       if (!res.ok) {
         setAttempts(a => a + 1);
         if (res.status === 423) { setLocked(true); setErr(data.detail); }
         else setErr(data.detail || "Invalid credentials");
+        setLoading(false);
         return;
       }
       TokenStore.set(data.access_token, data.refresh_token, data.user);
       onLogin(data.user);
-    } catch {
-      setErr("Cannot connect to API. Is the server running?");
+    } catch (e) {
+      if (e.name === "AbortError") {
+        setErr("Login timed out. Please check API server connection.");
+      } else {
+        setErr("Cannot connect to API. Is the server running?");
+      }
     } finally {
       setLoading(false);
     }
   };
+
 
   const inputStyle = { width: "100%", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 10, padding: "12px 14px", color: "#f1f5f9", fontSize: 14, outline: "none" };
   const labelStyle = { fontSize: 11, color: "#64748b", letterSpacing: "0.1em", textTransform: "uppercase", display: "block", marginBottom: 8, fontWeight: 600 };
@@ -307,8 +323,11 @@ export default function App() {
       const authH = { Authorization: `Bearer ${token}` };
 
       const checkAuth = async (res) => {
-        if (res.status === 401 || res.status === 403) {
+        if (res.status === 401) {
           throw new Error("UNAUTHORIZED");
+        }
+        if (res.status === 403) {
+          return null; // Permission error for role — do not log out
         }
         return res.json();
       };
@@ -349,7 +368,7 @@ export default function App() {
     } catch (e) {
       if (e.message === "UNAUTHORIZED") {
         handleLogout();
-        showToast("Session expired or key changed. Please sign in again.", "error");
+        showToast("Session expired. Please sign in again.", "error");
       } else {
         setApiOnline(false);
       }
@@ -364,15 +383,61 @@ export default function App() {
     return () => clearInterval(t);
   }, [auth, captureRunning, fetchAll]);
 
-  // Auto-login if valid session exists
+  // Auto-login with token verification
   useEffect(() => {
-    const user = TokenStore.getUser();
-    const token = TokenStore.getAccess();
-    if (user && token) {
-      setCurrentUser(user);
-      setAuth(true);
-    }
+    const verifySession = async () => {
+      const user = TokenStore.getUser();
+      const token = TokenStore.getAccess();
+      const refreshToken = TokenStore.getRefresh();
+
+      if (!token) {
+        setAuth(false);
+        setCurrentUser(null);
+        return;
+      }
+
+      try {
+        const res = await fetch(`${API}/auth/me`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        if (res.ok) {
+          const me = await res.json();
+          setCurrentUser(user || { username: me.username, role: me.role });
+          setAuth(true);
+          return;
+        }
+
+        if (res.status === 401 && refreshToken) {
+          const refRes = await fetch(`${API}/auth/refresh`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ refresh_token: refreshToken })
+          });
+          if (refRes.ok) {
+            const refData = await refRes.json();
+            TokenStore.set(refData.access_token, refData.refresh_token, refData.user || user);
+            setCurrentUser(refData.user || user);
+            setAuth(true);
+            return;
+          }
+        }
+      } catch {
+        // API offline — allow user to access UI if local token exists
+        if (user && token) {
+          setCurrentUser(user);
+          setAuth(true);
+          return;
+        }
+      }
+
+      TokenStore.clear();
+      setAuth(false);
+      setCurrentUser(null);
+    };
+
+    verifySession();
   }, []);
+
 
   // Derived data
   const bc = stats.by_class || {};
