@@ -13,7 +13,7 @@ from typing import Optional
 import psycopg2
 import psycopg2.extras
 
-from database import get_db_connection, init_pg_db
+from database import get_db_connection, release_db_connection, init_pg_db
 
 # ── Config ────────────────────────────────────────────────────
 try:
@@ -49,7 +49,7 @@ def init_db():
                 conn.commit()
                 print(f"[auth] Default admin created in PostgreSQL: {DASHBOARD_USERNAME} / {DASHBOARD_PASSWORD}")
     finally:
-        conn.close()
+        release_db_connection(conn)
 
 # ── Password Hashing ──────────────────────────────────────────
 def _hash_password(password: str, salt: str = None) -> tuple[str, str]:
@@ -127,7 +127,7 @@ def create_user(username: str, email: str, password: str, role: str = "viewer", 
             return {"success": False, "message": "Username already exists"}
         return {"success": False, "message": "Email already exists"}
     finally:
-        conn.close()
+        release_db_connection(conn)
 
 def list_users() -> list:
     conn = get_db_connection()
@@ -137,7 +137,7 @@ def list_users() -> list:
             rows = c.fetchall()
             return [dict(r) for r in rows]
     finally:
-        conn.close()
+        release_db_connection(conn)
 
 def update_user_role(username: str, new_role: str) -> dict:
     if new_role not in ROLES:
@@ -149,7 +149,7 @@ def update_user_role(username: str, new_role: str) -> dict:
         conn.commit()
         return {"success": True, "message": f"Role updated to {new_role}"}
     finally:
-        conn.close()
+        release_db_connection(conn)
 
 def delete_user(username: str) -> dict:
     if username == "admin":
@@ -161,7 +161,7 @@ def delete_user(username: str) -> dict:
         conn.commit()
         return {"success": True, "message": f"User '{username}' deleted"}
     finally:
-        conn.close()
+        release_db_connection(conn)
 
 def toggle_user_active(username: str) -> dict:
     conn = get_db_connection()
@@ -174,63 +174,67 @@ def toggle_user_active(username: str) -> dict:
             return {"success": False, "message": "User not found"}
         return {"success": True, "active": bool(row[0])}
     finally:
-        conn.close()
+        release_db_connection(conn)
 
 # ── Rate Limiting ─────────────────────────────────────────────
-def _is_locked_out(username: str, ip: str) -> bool:
+def _is_locked_out_conn(conn, username: str, ip: str) -> bool:
+    cutoff = (datetime.now() - timedelta(minutes=LOCKOUT_MINUTES)).isoformat()
+    with conn.cursor() as c:
+        c.execute(
+            "SELECT COUNT(*) FROM login_attempts WHERE (username=%s OR ip_address=%s) AND success=0 AND attempted_at>%s",
+            (username, ip, cutoff)
+        )
+        count = c.fetchone()[0]
+        return count >= MAX_LOGIN_ATTEMPTS
+
+def _log_attempt_conn(conn, username: str, ip: str, success: bool):
+    with conn.cursor() as c:
+        c.execute(
+            "INSERT INTO login_attempts (username, ip_address, success, attempted_at) VALUES (%s,%s,%s,%s)",
+            (username, ip, int(success), datetime.now().isoformat())
+        )
+    conn.commit()
+
+# ── Login / Token ─────────────────────────────────────────────
+def login(username: str, password: str, ip: str = "unknown") -> dict:
     conn = get_db_connection()
     try:
         cutoff = (datetime.now() - timedelta(minutes=LOCKOUT_MINUTES)).isoformat()
         with conn.cursor() as c:
+            # 1. Lockout check
             c.execute(
                 "SELECT COUNT(*) FROM login_attempts WHERE (username=%s OR ip_address=%s) AND success=0 AND attempted_at>%s",
                 (username, ip, cutoff)
             )
-            count = c.fetchone()[0]
-            return count >= MAX_LOGIN_ATTEMPTS
-    finally:
-        conn.close()
+            failed_cnt = c.fetchone()[0]
+            if failed_cnt >= MAX_LOGIN_ATTEMPTS:
+                return {
+                    "success": False,
+                    "message": f"Too many failed attempts. Try again in {LOCKOUT_MINUTES} minutes.",
+                    "locked": True
+                }
 
-def _log_attempt(username: str, ip: str, success: bool):
-    conn = get_db_connection()
-    try:
-        with conn.cursor() as c:
-            c.execute(
-                "INSERT INTO login_attempts (username, ip_address, success, attempted_at) VALUES (%s,%s,%s,%s)",
-                (username, ip, int(success), datetime.now().isoformat())
-            )
-        conn.commit()
-    finally:
-        conn.close()
-
-# ── Login / Token ─────────────────────────────────────────────
-def login(username: str, password: str, ip: str = "unknown") -> dict:
-    if _is_locked_out(username, ip):
-        return {
-            "success": False,
-            "message": f"Too many failed attempts. Try again in {LOCKOUT_MINUTES} minutes.",
-            "locked": True
-        }
-
-    conn = get_db_connection()
-    try:
-        with conn.cursor() as c:
+            # 2. User lookup
             c.execute("SELECT id, password_hash, role, is_active FROM users WHERE username=%s", (username,))
             row = c.fetchone()
 
             if not row or not _verify_password(password, row[1]):
-                _log_attempt(username, ip, False)
+                c.execute(
+                    "INSERT INTO login_attempts (username, ip_address, success, attempted_at) VALUES (%s,%s,0,%s)",
+                    (username, ip, datetime.now().isoformat())
+                )
+                conn.commit()
                 return {"success": False, "message": "Invalid username or password"}
 
             if not row[3]:
                 return {"success": False, "message": "Account is disabled. Contact admin."}
 
             user_id, _, role, _ = row
+            now_iso = datetime.now().isoformat()
 
-            # Update last login
-            c.execute("UPDATE users SET last_login=%s WHERE id=%s", (datetime.now().isoformat(), user_id))
+            # 3. Batch update last_login, refresh token & log attempt in single transaction
+            c.execute("UPDATE users SET last_login=%s WHERE id=%s", (now_iso, user_id))
 
-            # Generate tokens
             access_token = _sign(
                 {"sub": username, "role": role, "uid": user_id, "type": "access"},
                 SECRET_KEY, ACCESS_TOKEN_EXPIRE_MINUTES
@@ -241,11 +245,13 @@ def login(username: str, password: str, ip: str = "unknown") -> dict:
 
             c.execute(
                 "INSERT INTO refresh_tokens (user_id, token_hash, expires_at, created_at) VALUES (%s,%s,%s,%s)",
-                (user_id, refresh_hash, refresh_exp, datetime.now().isoformat())
+                (user_id, refresh_hash, refresh_exp, now_iso)
             )
-        conn.commit()
-
-        _log_attempt(username, ip, True)
+            c.execute(
+                "INSERT INTO login_attempts (username, ip_address, success, attempted_at) VALUES (%s,%s,1,%s)",
+                (username, ip, now_iso)
+            )
+            conn.commit()
 
         return {
             "success":       True,
@@ -260,7 +266,8 @@ def login(username: str, password: str, ip: str = "unknown") -> dict:
             }
         }
     finally:
-        conn.close()
+        release_db_connection(conn)
+
 
 def refresh_access_token(refresh_token: str) -> dict:
     token_hash = hashlib.sha256(refresh_token.encode()).hexdigest()

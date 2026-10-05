@@ -76,6 +76,18 @@ def startup():
     detector.load()
     print("[api] Detector ready.")
     print("[auth] Auth system ready.")
+    
+    # Run DB table init in background thread so FastAPI startup completes in <1ms
+    def _bg_init():
+        try:
+            from auth import init_db
+            init_db()
+        except Exception as e:
+            print(f"[api] Background DB init notice: {e}")
+    
+    import threading
+    threading.Thread(target=_bg_init, daemon=True).start()
+
     try:
         consumer_worker.start(run_in_background=True)
     except Exception as e:
@@ -264,8 +276,11 @@ def get_actor(request: Request) -> str:
 
 @app.post("/auth/login")
 def auth_login(req: LoginRequest, request: Request):
+    print(f"[api/login] Login request received for: {req.username}")
+    t0 = time.time()
     ip = request.client.host if request.client else "unknown"
     result = login(req.username, req.password, ip)
+    print(f"[api/login] Login finished in {(time.time()-t0)*1000:.1f}ms: success={result.get('success')}")
     if not result["success"]:
         status = 423 if result.get("locked") else 401
         raise HTTPException(status_code=status, detail=result["message"])

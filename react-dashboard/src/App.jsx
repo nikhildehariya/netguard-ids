@@ -72,7 +72,7 @@ function AuthScreen({ onLogin }) {
     setLoading(true);
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 8000);
+      const timeoutId = setTimeout(() => controller.abort(), 30000);
 
       const res = await fetch(`${API}/auth/login`, {
         method: "POST",

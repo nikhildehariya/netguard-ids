@@ -44,27 +44,28 @@ if (Test-Path ".env") {
     }
 }
 
-$BackendRunning = $false
+Write-Host "`n[4] Clearing existing processes on port $ApiPort & starting FastAPI backend..." -ForegroundColor Yellow
+Get-NetTCPConnection -LocalPort $ApiPort -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }
+$BackendProcess = Start-Process -FilePath "venv\Scripts\python.exe" -ArgumentList "-m uvicorn api.main:app --host 0.0.0.0 --port $ApiPort" -PassThru -NoNewWindow
+
+$FrontendRunning = $false
 try {
-    $resp = Invoke-WebRequest -Uri "http://127.0.0.1:$ApiPort/health" -TimeoutSec 2 -UseBasicParsing -ErrorAction SilentlyContinue
-    if ($resp.StatusCode -eq 200) {
-        $BackendRunning = $true
+    $resp2 = Invoke-WebRequest -Uri "http://127.0.0.1:5174" -TimeoutSec 2 -UseBasicParsing -ErrorAction SilentlyContinue
+    if ($resp2.StatusCode -eq 200) {
+        $FrontendRunning = $true
     }
 } catch {}
 
-$BackendProcess = $null
-if ($BackendRunning) {
-    Write-Host "`n[4] Backend API is already running on port $ApiPort. Bypassing startup." -ForegroundColor Green
+$FrontendProcess = $null
+if ($FrontendRunning) {
+    Write-Host "[5] React dashboard is already running on port 5174. Bypassing startup." -ForegroundColor Green
 } else {
-    Write-Host "`n[4] Starting FastAPI backend on port $ApiPort..." -ForegroundColor Yellow
-    $BackendProcess = Start-Process -FilePath "venv\Scripts\python.exe" -ArgumentList "-m uvicorn api.main:app --host 0.0.0.0 --port $ApiPort" -PassThru -NoNewWindow
-
+    Write-Host "[5] Clearing stale processes on port 5174 & starting React dashboard..." -ForegroundColor Yellow
+    Get-NetTCPConnection -LocalPort 5174 -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }
+    Push-Location react-dashboard
+    $FrontendProcess = Start-Process -FilePath ".\node_modules\.bin\vite.cmd" -ArgumentList "--host 127.0.0.1 --port 5174" -PassThru -NoNewWindow
+    Pop-Location
 }
-
-Write-Host "[5] Starting React dashboard on port 5174..." -ForegroundColor Yellow
-Push-Location react-dashboard
-$FrontendProcess = Start-Process -FilePath "npm.cmd" -ArgumentList "run dev" -PassThru -NoNewWindow
-Pop-Location
 
 # ── Open Web Browser ──────────────────────────────────────────
 Write-Host "`n[6] Waiting for services to initialize..." -ForegroundColor Yellow
@@ -89,7 +90,7 @@ try {
             Write-Host "`n[!] Backend API server stopped unexpectedly." -ForegroundColor Red
             break
         }
-        if ($FrontendProcess.HasExited) {
+        if ($FrontendProcess -and $FrontendProcess.HasExited) {
             Write-Host "`n[!] React dashboard server stopped unexpectedly." -ForegroundColor Red
             break
         }

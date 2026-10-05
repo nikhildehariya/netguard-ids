@@ -20,9 +20,56 @@ def _get_pg_url() -> str:
         return DATABASE_URL
     return f"postgresql://{POSTGRES_USER}:{POSTGRES_PASSWORD}@{POSTGRES_HOST}:{POSTGRES_PORT}/{POSTGRES_DB}?sslmode={POSTGRES_SSLMODE}"
 
+import psycopg2.pool
+
+_db_pool: Optional[psycopg2.pool.ThreadedConnectionPool] = None
+
+def _get_pool():
+    global _db_pool
+    if _db_pool is None or _db_pool.closed:
+        _db_pool = psycopg2.pool.ThreadedConnectionPool(
+            minconn=1,
+            maxconn=10,
+            dsn=_get_pg_url()
+        )
+    return _db_pool
+
 def get_db_connection():
-    """Returns a psycopg2 connection to PostgreSQL."""
-    return psycopg2.connect(_get_pg_url())
+    """Returns a connection from the PostgreSQL connection pool."""
+    try:
+        pool = _get_pool()
+        conn = pool.getconn()
+        if conn.closed != 0:
+            pool.putconn(conn, close=True)
+            conn = pool.getconn()
+        else:
+            try:
+                if conn.status == psycopg2.extensions.STATUS_READY:
+                    conn.poll()
+            except Exception:
+                pool.putconn(conn, close=True)
+                conn = pool.getconn()
+        return conn
+    except Exception:
+        # Fallback to direct connection if pool fails
+        return psycopg2.connect(_get_pg_url(), connect_timeout=5)
+
+def release_db_connection(conn):
+    """Releases a connection back to the pool."""
+    if conn and _db_pool and not _db_pool.closed:
+        try:
+            _db_pool.putconn(conn)
+        except Exception:
+            try:
+                conn.close()
+            except Exception:
+                pass
+    elif conn:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
 
 def get_db_mode() -> str:
     return "postgres"
@@ -130,10 +177,6 @@ def init_pg_db():
 
         conn.commit()
     finally:
-        conn.close()
+        release_db_connection(conn)
 
-# Auto-initialize tables on module import
-try:
-    init_pg_db()
-except Exception as e:
-    print(f"[database.py] Warning: Could not initialize PostgreSQL tables: {e}")
+# Database initialization is called explicitly on app startup

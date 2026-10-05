@@ -134,10 +134,15 @@ class FlowStreamConsumer:
         print(f"[consumer] Stopping worker ({self.consumer_name})...")
 
     def _run_loop(self):
+        if not self._connect():
+            print("[consumer] Standalone mode active (Redis buffer bypassed). Direct pipeline ready.")
+            self.running = False
+            return
+
         while self.running:
             if not self.client:
                 if not self._connect():
-                    time.sleep(3)
+                    time.sleep(10)
                     continue
 
             try:

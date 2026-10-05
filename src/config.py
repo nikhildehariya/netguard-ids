@@ -96,10 +96,10 @@ ALL_FEATURE_COLS   = FEATURE_COLS
 # ── API ───────────────────────────────────────────────────────
 API_HOST = "0.0.0.0"
 API_PORT = int(os.getenv("API_PORT", "8081"))
-API_URL  = f"http://localhost:{API_PORT}"
+API_URL  = f"http://127.0.0.1:{API_PORT}"
 
 # ── Redis Stream Flow Buffer ─────────────────────────────────
-REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
+REDIS_HOST = os.getenv("REDIS_HOST", "127.0.0.1")
 REDIS_PORT = int(os.getenv("REDIS_PORT", "6379"))
 REDIS_PASSWORD = os.getenv("REDIS_PASSWORD", None)
 REDIS_STREAM_KEY = os.getenv("REDIS_STREAM_KEY", "netguard:flow_stream")
