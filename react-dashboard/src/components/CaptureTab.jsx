@@ -57,7 +57,7 @@ export default function CaptureTab({
         </div>
 
         {/* SPAN not configured warning */}
-        {captureMode === "span" && selectedIface === "SPAN_GUID_PLACEHOLDER" && (
+        {captureMode === "span" && (!selectedIface || selectedIface.includes("PLACEHOLDER")) && (
           <div style={{ background: "rgba(249,115,22,0.08)", border: "1px solid rgba(249,115,22,0.2)", borderRadius: 8, padding: "10px 14px", marginBottom: 12, fontSize: 12, color: "#f97316" }}>
             ⚠️ SPAN GUID not configured yet — update <code style={{ color: "#fbbf24" }}>SPAN_GUID</code> in App.jsx at college
           </div>

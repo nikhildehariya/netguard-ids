@@ -98,9 +98,21 @@ def preprocess_train(df: pd.DataFrame):
     )
 
 
+_SCALER_CACHE = None
+
+
+def get_scaler():
+    global _SCALER_CACHE
+    if _SCALER_CACHE is None and SCALER_PATH.exists():
+        _SCALER_CACHE = joblib.load(SCALER_PATH)
+    return _SCALER_CACHE
+
+
 def preprocess_inference(record: dict) -> np.ndarray:
     """Preprocess a single record for inference."""
-    scaler = joblib.load(SCALER_PATH)
+    scaler = get_scaler()
+    if scaler is None:
+        scaler = joblib.load(SCALER_PATH)
     df = pd.DataFrame([record])
 
     # Keep only trained feature cols

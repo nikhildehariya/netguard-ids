@@ -164,7 +164,30 @@ DASHBOARD_PASSWORD = os.getenv("DASHBOARD_PASSWORD", "netguard123")
 
 # ── JWT Secret — persists across restarts via .env ───────────
 import secrets as _secrets
-SECRET_KEY = os.getenv("SECRET_KEY", _secrets.token_hex(32))
+_SECRET_KEY_FILE = BASE_DIR / "keys" / ".secret_key"
+
+
+def _get_persistent_secret_key():
+    env_key = os.getenv("SECRET_KEY")
+    if env_key:
+        return env_key
+    if _SECRET_KEY_FILE.exists():
+        try:
+            k = _SECRET_KEY_FILE.read_text(encoding="utf-8").strip()
+            if k:
+                return k
+        except Exception:
+            pass
+    new_key = _secrets.token_hex(32)
+    try:
+        _SECRET_KEY_FILE.parent.mkdir(parents=True, exist_ok=True)
+        _SECRET_KEY_FILE.write_text(new_key, encoding="utf-8")
+    except Exception:
+        pass
+    return new_key
+
+
+SECRET_KEY = _get_persistent_secret_key()
 
 # ── Automated Response ────────────────────────────────────────
 AUTO_BLOCK_ENABLED = os.getenv("AUTO_BLOCK_ENABLED", "false").lower() == "true"

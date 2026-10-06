@@ -167,12 +167,14 @@ def toggle_user_active(username: str) -> dict:
     conn = get_db_connection()
     try:
         with conn.cursor() as c:
-            c.execute("UPDATE users SET is_active = 1 - is_active WHERE username=%s RETURNING is_active", (username,))
+            c.execute("UPDATE users SET is_active = 1 - is_active WHERE username=%s", (username,))
+            c.execute("SELECT is_active FROM users WHERE username=%s", (username,))
             row = c.fetchone()
         conn.commit()
         if not row:
             return {"success": False, "message": "User not found"}
-        return {"success": True, "active": bool(row[0])}
+        val = row.get("is_active") if isinstance(row, dict) else row[0]
+        return {"success": True, "active": bool(val)}
     finally:
         release_db_connection(conn)
 

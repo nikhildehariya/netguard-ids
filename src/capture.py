@@ -10,8 +10,12 @@ import numpy as np
 from datetime import datetime
 from collections import defaultdict
 
+from concurrent.futures import ThreadPoolExecutor
+
 from config import API_URL, AGENT_SECRET_KEY
 from stream_producer import dispatch_flow
+
+_DISPATCH_POOL = ThreadPoolExecutor(max_workers=4, thread_name_prefix="netguard_dispatch")
 
 try:
     from scapy.all import sniff, IP, TCP, UDP, ICMP
@@ -282,11 +286,7 @@ def process_packet(pkt):
 
         if should_send and total_pkts >= 1:
             features = flow_to_features(f, f["src_ip"])
-            threading.Thread(
-                target=dispatch_flow,
-                args=(features,),
-                daemon=True
-            ).start()
+            _DISPATCH_POOL.submit(dispatch_flow, features)
 
 
 def flush_flows():
@@ -304,11 +304,7 @@ def flush_flows():
             for k in to_flush:
                 f = flows[k]
                 features = flow_to_features(f, f["src_ip"])
-                threading.Thread(
-                    target=dispatch_flow,
-                    args=(features,),
-                    daemon=True
-                ).start()
+                _DISPATCH_POOL.submit(dispatch_flow, features)
                 del flows[k]
 
 

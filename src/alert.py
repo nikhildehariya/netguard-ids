@@ -200,7 +200,7 @@ def _send_email(result: dict, source_ip: str):
     msg.attach(MIMEText(_build_html_email(result, source_ip), "html"))
 
     try:
-        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
+        with smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=5.0) as server:
             server.login(ALERT_FROM, ALERT_PASS)
             server.send_message(msg)
         print(f"[alert] [OK] Email sent to {alert_to}")
@@ -295,6 +295,6 @@ def handle_alert(result: dict, source_ip: str = "unknown",
             and result["confidence"] >= ALERT_CONFIDENCE_THRESHOLD):
         print(f"[alert] [ALERT] {result['prediction']} from {source_ip} "
               f"({result['confidence']*100:.1f}% confidence)")
-        _send_email(result, source_ip)
-        _send_telegram(result, source_ip)
+        threading.Thread(target=_send_email, args=(result, source_ip), daemon=True).start()
+        threading.Thread(target=_send_telegram, args=(result, source_ip), daemon=True).start()
         _maybe_auto_block(result, source_ip)
