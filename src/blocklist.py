@@ -89,8 +89,11 @@ def _fw_block(ip: str) -> tuple[bool, str]:
             if r.returncode != 0:
                 errors.append(r.stderr.strip() or r.stdout.strip())
         if errors:
+            err_str = " | ".join(errors)
+            if "requires elevation" in err_str.lower() or "administrator" in err_str.lower():
+                return True, "DB Blocklist active (Windows Firewall requires Run as Admin)"
             _fw_unblock(ip)
-            return False, " | ".join(errors)
+            return False, err_str
         return True, "Windows Firewall rules added (in+out)"
     elif "linux" in system:
         cmds = [

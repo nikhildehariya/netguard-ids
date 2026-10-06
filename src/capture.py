@@ -316,6 +316,16 @@ def start_capture(interface: str):
     global capture_running
     capture_running = True
 
+    if interface in ("eth0", "auto", "", "default") or (sys.platform == "win32" and not interface.startswith(("\\Device\\NPF_", "{"))):
+        try:
+            from scapy.all import conf
+            if hasattr(conf, "iface") and conf.iface:
+                fallback = str(getattr(conf.iface, "name", conf.iface))
+                print(f"[capture] Resolving default interface '{interface}' -> '{fallback}'")
+                interface = fallback
+        except Exception as e:
+            print(f"[capture] Interface fallback notice: {e}")
+
     print(f"\n[capture] Starting on: {interface}")
     print(f"[capture] API: {API_URL}/predict")
     print(f"[capture] Press Ctrl+C to stop.\n")

@@ -83,7 +83,7 @@ def migrate_csv_to_sqlite() -> dict:
                         _safe_str(row.get("severity"), "none"),
                         _safe_str(row.get("source_ip"), "unknown"),
                         _safe_str(row.get("flow_id"), ""),
-                        _safe_str(row.get("mode"), "live"),
+                        _safe_str(row.get("mode"), "benchmark"),
                     ))
                     migrated += 1
                 except Exception as e:

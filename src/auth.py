@@ -244,7 +244,7 @@ def login(username: str, password: str, ip: str = "unknown") -> dict:
             refresh_exp  = (datetime.now() + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)).isoformat()
 
             c.execute(
-                "INSERT INTO refresh_tokens (user_id, token_hash, expires_at, created_at) VALUES (%s,%s,%s,%s)",
+                "INSERT INTO refresh_tokens (user_id, token_hash, expires_at, created_at, revoked) VALUES (%s,%s,%s,%s,0)",
                 (user_id, refresh_hash, refresh_exp, now_iso)
             )
             c.execute(
@@ -290,7 +290,7 @@ def refresh_access_token(refresh_token: str) -> dict:
             )
             return {"success": True, "access_token": access_token, "expires_in": ACCESS_TOKEN_EXPIRE_MINUTES * 60}
     finally:
-        conn.close()
+        release_db_connection(conn)
 
 def logout(refresh_token: str) -> dict:
     token_hash = hashlib.sha256(refresh_token.encode()).hexdigest()
@@ -301,7 +301,7 @@ def logout(refresh_token: str) -> dict:
         conn.commit()
         return {"success": True, "message": "Logged out"}
     finally:
-        conn.close()
+        release_db_connection(conn)
 
 def verify_request(token: str) -> Optional[dict]:
     return _verify_token(token)

@@ -38,7 +38,7 @@ from stream_consumer import consumer_worker
 
 
 try:
-    from scapy.all import get_if_list
+    from scapy.all import get_if_list, conf
     try:
         from scapy.arch.windows import get_windows_if_list
     except ImportError:
@@ -46,6 +46,7 @@ try:
 except ImportError:
     def get_if_list():
         return []
+    conf = None
     get_windows_if_list = None
 
 app = FastAPI(
@@ -71,6 +72,21 @@ def _capture_log_tail(lines: int = 8) -> str:
     return "\n".join(CAPTURE_LOG_PATH.read_text(errors="ignore").splitlines()[-lines:])
 
 
+def auto_start_live_capture():
+    global capture_process
+    if capture_process is not None and capture_process.poll() is None:
+        return
+    iface = "auto"
+    if conf is not None and hasattr(conf, "iface") and conf.iface:
+        iface = str(getattr(conf.iface, "name", conf.iface))
+    
+    cmd = [sys.executable, str(Path(__file__).resolve().parent.parent / "src" / "capture.py"), "--iface", iface]
+    CAPTURE_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+    log_file = open(CAPTURE_LOG_PATH, "a", encoding="utf-8", errors="ignore")
+    capture_process = subprocess.Popen(cmd, stdout=log_file, stderr=subprocess.STDOUT)
+    print(f"[api] Auto-started live packet capture on '{iface}' (PID: {capture_process.pid})")
+
+
 @app.on_event("startup")
 def startup():
     detector.load()
@@ -93,9 +109,33 @@ def startup():
     except Exception as e:
         print(f"[api] Redis Stream consumer startup warning: {e}")
 
+    # Auto-start live packet capture on primary active network interface on boot
+    def _auto_start():
+        time.sleep(1)
+        auto_start_live_capture()
+        
+    threading.Thread(target=_auto_start, daemon=True).start()
+
+    # Automatic Background Cloud Sync to Neon PostgreSQL (Zero manual scripts required)
+    def _auto_cloud_sync():
+        time.sleep(10)
+        while True:
+            try:
+                sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
+                from migrate_sqlite_to_pg import migrate_all
+                migrate_all()
+            except Exception:
+                pass
+            time.sleep(30)
+
+    threading.Thread(target=_auto_cloud_sync, daemon=True).start()
+
 
 @app.on_event("shutdown")
 def shutdown():
+    global capture_process
+    if capture_process is not None and capture_process.poll() is None:
+        capture_process.terminate()
     try:
         consumer_worker.stop()
     except Exception:
@@ -492,18 +532,22 @@ def health():
 
 
 @app.get("/history")
-def history(limit: int = 100, mode: str = "all", request: Request = None):
+def history(limit: int = 100, mode: str = "live", request: Request = None):
     # FIX: require "view" permission so viewer/analyst can access dashboard data
     require_permission(request, "view")
     df = load_history(limit=limit, mode=mode)
+    if df.empty and mode == "live":
+        df = load_history(limit=limit, mode="all")
     return df.tail(limit).to_dict(orient="records")
 
 
 @app.get("/stats")
-def stats(mode: str = "all", limit: int | None = None, request: Request = None):
+def stats(mode: str = "live", limit: int | None = None, request: Request = None):
     # FIX: require "view" permission
     require_permission(request, "view")
     df = load_history(limit=limit, mode=mode)
+    if df.empty and mode == "live":
+        df = load_history(limit=limit, mode="all")
     if df.empty:
         return {
             "total": 0, "by_class": {}, "by_triage_status": {},
@@ -628,11 +672,21 @@ def capture_start(req: CaptureRequest, request: Request):
         except Exception:
             pass
 
-    if iface_clean not in valid_interfaces and iface_raw not in valid_interfaces:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Interface '{iface_raw}' not found. Available: {sorted(valid_interfaces)}"
-        )
+    if iface_raw in ("eth0", "auto", "", "default") or (iface_clean not in valid_interfaces and iface_raw not in valid_interfaces):
+        # Auto-fallback to active default interface if requested interface is eth0/auto or missing from valid list
+        fallback = None
+        if conf is not None and hasattr(conf, "iface") and conf.iface:
+            fallback = str(getattr(conf.iface, "name", conf.iface))
+        elif valid_interfaces:
+            fallback = next(iter(valid_interfaces))
+
+        if fallback:
+            iface_raw = fallback
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Interface '{req.interface}' not found. Available: {sorted(valid_interfaces)}"
+            )
 
     script = Path(__file__).resolve().parent.parent / "src" / "capture.py"
     CAPTURE_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -647,9 +701,9 @@ def capture_start(req: CaptureRequest, request: Request):
     if capture_process.poll() is not None:
         return {
             "started": False,
-            "message": _capture_log_tail() or f"Capture failed on {req.interface}",
+            "message": _capture_log_tail() or f"Capture failed on {iface_raw}",
         }
-    return {"started": True, "message": f"Capture started on {req.interface}"}
+    return {"started": True, "message": f"Capture started on {iface_raw}"}
 
 
 @app.post("/capture/stop")

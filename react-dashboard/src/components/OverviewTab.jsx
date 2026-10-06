@@ -2,6 +2,15 @@ import React from "react";
 import { AreaChart, Area, PieChart, Pie, Cell, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
 import { COLORS, SEV_COLOR, StatCard, SectionTitle, Pill } from "./Common";
 
+const formatLocalTime = (ts) => {
+  if (!ts) return "";
+  let raw = String(ts);
+  if (!raw.endsWith("Z") && !raw.includes("+") && raw.includes("T")) raw += "Z";
+  const d = new Date(raw);
+  if (isNaN(d.getTime())) return raw.slice(11, 19);
+  return d.toLocaleTimeString([], { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
+};
+
 export default function OverviewTab({ stats, bc, timelineData, pieData, attacks }) {
   return (
     <div style={{ animation: "fadeIn 0.3s ease" }}>
@@ -84,7 +93,7 @@ export default function OverviewTab({ stats, bc, timelineData, pieData, attacks 
                 </div>
                 <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
                   <span style={{ fontSize: 12, color: SEV_COLOR[r.severity], fontFamily: "monospace" }}>{(r.confidence * 100).toFixed(1)}%</span>
-                  <span style={{ fontSize: 11, color: "#334155", fontFamily: "monospace" }}>{String(r.timestamp || "").slice(11, 19)}</span>
+                  <span style={{ fontSize: 11, color: "#64748b", fontFamily: "monospace" }}>{formatLocalTime(r.timestamp)}</span>
                 </div>
               </div>
             ))}
