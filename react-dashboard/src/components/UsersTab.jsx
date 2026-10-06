@@ -13,15 +13,18 @@ export default function UsersTab({ token, currentUser, themeMode, API }) {
   const [loading, setLoading] = useState(false);
   const [savingAlert, setSavingAlert] = useState(false);
 
-  const authHeaders = { "Content-Type": "application/json", Authorization: `Bearer ${token}` };
+  const getHeaders = () => {
+    const activeToken = token || sessionStorage.getItem("ng_access");
+    return { "Content-Type": "application/json", Authorization: `Bearer ${activeToken}` };
+  };
 
   const loadUsers = async () => {
-    const r = await fetch(`${API}/auth/users`, { headers: authHeaders }).catch(() => null);
+    const r = await fetch(`${API}/auth/users`, { headers: getHeaders() }).catch(() => null);
     if (r?.ok) { const d = await r.json(); setUsers(d.users || []); }
   };
 
   const loadAlertSettings = async () => {
-    const r = await fetch(`${API}/admin/alert-settings`, { headers: authHeaders }).catch(() => null);
+    const r = await fetch(`${API}/admin/alert-settings`, { headers: getHeaders() }).catch(() => null);
     if (r?.ok) {
       const d = await r.json();
       setAlertEmail(d.alert_to_email || "");
@@ -33,29 +36,29 @@ export default function UsersTab({ token, currentUser, themeMode, API }) {
   useEffect(() => {
     loadUsers();
     loadAlertSettings();
-  }, []);
+  }, [token]);
 
   const createUser = async () => {
     setLoading(true);
-    const r = await fetch(`${API}/auth/users`, { method: "POST", headers: authHeaders, body: JSON.stringify(form) }).catch(() => null);
+    const r = await fetch(`${API}/auth/users`, { method: "POST", headers: getHeaders(), body: JSON.stringify(form) }).catch(() => null);
     if (r?.ok) { const d = await r.json(); setMsg(d.message); setShowCreate(false); setForm({ username: "", email: "", password: "", role: "viewer", full_name: "", phone: "", designation: "" }); loadUsers(); }
     else { const d = await r?.json(); setMsg(d?.detail || "Failed"); }
     setLoading(false);
   };
 
   const changeRole = async (username, role) => {
-    await fetch(`${API}/auth/users/${username}/role`, { method: "PATCH", headers: authHeaders, body: JSON.stringify({ role }) });
+    await fetch(`${API}/auth/users/${username}/role`, { method: "PATCH", headers: getHeaders(), body: JSON.stringify({ role }) });
     loadUsers();
   };
 
   const toggleActive = async (username) => {
-    await fetch(`${API}/auth/users/${username}/toggle`, { method: "PATCH", headers: authHeaders });
+    await fetch(`${API}/auth/users/${username}/toggle`, { method: "PATCH", headers: getHeaders() });
     loadUsers();
   };
 
   const deleteUser = async (username) => {
     if (!confirm(`Delete user "${username}"?`)) return;
-    await fetch(`${API}/auth/users/${username}`, { method: "DELETE", headers: authHeaders });
+    await fetch(`${API}/auth/users/${username}`, { method: "DELETE", headers: getHeaders() });
     loadUsers();
   };
 
@@ -63,7 +66,7 @@ export default function UsersTab({ token, currentUser, themeMode, API }) {
     setSavingAlert(true);
     const r = await fetch(`${API}/admin/alert-settings`, {
       method: "PATCH",
-      headers: authHeaders,
+      headers: getHeaders(),
       body: JSON.stringify({ alert_to_email: alertEmail }),
     }).catch(() => null);
     if (r?.ok) {
