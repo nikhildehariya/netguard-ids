@@ -10,6 +10,7 @@ import json
 import base64
 from datetime import datetime, timedelta
 from typing import Optional
+import sqlite3
 import psycopg2
 import psycopg2.extras
 
@@ -47,7 +48,7 @@ def init_db():
             if c.fetchone()[0] == 0:
                 _create_user_internal(c, DASHBOARD_USERNAME, f"{DASHBOARD_USERNAME}@netguard.local", DASHBOARD_PASSWORD, "admin", "System Administrator", "+919999999999", "Security Operations")
                 conn.commit()
-                print(f"[auth] Default admin created in PostgreSQL: {DASHBOARD_USERNAME} / {DASHBOARD_PASSWORD}")
+                print(f"[auth] Default admin user initialized: username='{DASHBOARD_USERNAME}' (password set from environment configuration)")
     finally:
         release_db_connection(conn)
 
@@ -101,13 +102,13 @@ def _verify_token(token: str) -> Optional[dict]:
         return None
 
 # ── User Management ───────────────────────────────────────────
-def _create_user_internal(cur, username, email, password, role, full_name="", phone="", designation=""):
+def _create_user_internal(cur, username, email, password, role, full_name="", phone="", designation="", tenant_id="default"):
     cur.execute(
-        "INSERT INTO users (username, email, password_hash, role, created_at, full_name, phone, designation) VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
-        (username, email, _make_password_hash(password), role, datetime.now().isoformat(), full_name, phone, designation)
+        "INSERT INTO users (username, email, password_hash, role, created_at, full_name, phone, designation, tenant_id) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+        (username, email, _make_password_hash(password), role, datetime.now().isoformat(), full_name, phone, designation, tenant_id)
     )
 
-def create_user(username: str, email: str, password: str, role: str = "viewer", full_name: str = "", phone: str = "", designation: str = "") -> dict:
+def create_user(username: str, email: str, password: str, role: str = "viewer", full_name: str = "", phone: str = "", designation: str = "", tenant_id: str = "default") -> dict:
     if role not in ROLES:
         return {"success": False, "message": f"Invalid role. Choose from: {ROLES}"}
     if len(password) < 8:
@@ -118,10 +119,10 @@ def create_user(username: str, email: str, password: str, role: str = "viewer", 
     conn = get_db_connection()
     try:
         with conn.cursor() as c:
-            _create_user_internal(c, username, email, password, role, full_name, phone, designation)
+            _create_user_internal(c, username, email, password, role, full_name, phone, designation, tenant_id)
         conn.commit()
         return {"success": True, "message": f"User '{username}' created successfully"}
-    except psycopg2.IntegrityError as e:
+    except (psycopg2.IntegrityError, sqlite3.IntegrityError) as e:
         conn.rollback()
         if "username" in str(e):
             return {"success": False, "message": "Username already exists"}
@@ -129,11 +130,14 @@ def create_user(username: str, email: str, password: str, role: str = "viewer", 
     finally:
         release_db_connection(conn)
 
-def list_users() -> list:
+def list_users(tenant_id: Optional[str] = None) -> list:
     conn = get_db_connection()
     try:
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as c:
-            c.execute("SELECT id, username, email, role, is_active, created_at, last_login, full_name, phone, designation FROM users ORDER BY id ASC")
+            if tenant_id and tenant_id != "*":
+                c.execute("SELECT id, username, email, role, is_active, created_at, last_login, full_name, phone, designation, tenant_id FROM users WHERE tenant_id=%s ORDER BY id ASC", (tenant_id,))
+            else:
+                c.execute("SELECT id, username, email, role, is_active, created_at, last_login, full_name, phone, designation, tenant_id FROM users ORDER BY id ASC")
             rows = c.fetchall()
             return [dict(r) for r in rows]
     finally:
@@ -225,7 +229,7 @@ def login(username: str, password: str, ip: str = "unknown") -> dict:
                 }
 
             # 2. User lookup
-            c.execute("SELECT id, password_hash, role, is_active FROM users WHERE username=%s", (username,))
+            c.execute("SELECT id, password_hash, role, is_active, tenant_id FROM users WHERE username=%s", (username,))
             row = c.fetchone()
 
             if not row or not _verify_password(password, row[1]):
@@ -239,14 +243,14 @@ def login(username: str, password: str, ip: str = "unknown") -> dict:
             if not row[3]:
                 return {"success": False, "message": "Account is disabled. Contact admin."}
 
-            user_id, _, role, _ = row
+            user_id, _, role, _, tenant_id = row
             now_iso = datetime.now().isoformat()
 
             # 3. Batch update last_login, refresh token & log attempt in single transaction
             c.execute("UPDATE users SET last_login=%s WHERE id=%s", (now_iso, user_id))
 
             access_token = _sign(
-                {"sub": username, "role": role, "uid": user_id, "type": "access"},
+                {"sub": username, "role": role, "uid": user_id, "tenant_id": tenant_id or "default", "type": "access"},
                 SECRET_KEY, ACCESS_TOKEN_EXPIRE_MINUTES
             )
             refresh_raw  = secrets.token_hex(32)
@@ -272,6 +276,7 @@ def login(username: str, password: str, ip: str = "unknown") -> dict:
             "user": {
                 "username":    username,
                 "role":        role,
+                "tenant_id":   tenant_id or "default",
                 "permissions": ROLE_PERMISSIONS[role],
             }
         }
@@ -285,7 +290,7 @@ def refresh_access_token(refresh_token: str) -> dict:
     try:
         with conn.cursor() as c:
             c.execute(
-                "SELECT rt.user_id, u.username, u.role FROM refresh_tokens rt JOIN users u ON rt.user_id=u.id "
+                "SELECT rt.user_id, u.username, u.role, u.tenant_id FROM refresh_tokens rt JOIN users u ON rt.user_id=u.id "
                 "WHERE rt.token_hash=%s AND rt.revoked=0 AND rt.expires_at>%s",
                 (token_hash, datetime.now().isoformat())
             )
@@ -293,9 +298,9 @@ def refresh_access_token(refresh_token: str) -> dict:
             if not row:
                 return {"success": False, "message": "Invalid or expired refresh token"}
 
-            user_id, username, role = row
+            user_id, username, role, tenant_id = row
             access_token = _sign(
-                {"sub": username, "role": role, "uid": user_id, "type": "access"},
+                {"sub": username, "role": role, "uid": user_id, "tenant_id": tenant_id or "default", "type": "access"},
                 SECRET_KEY, ACCESS_TOKEN_EXPIRE_MINUTES
             )
             return {"success": True, "access_token": access_token, "expires_in": ACCESS_TOKEN_EXPIRE_MINUTES * 60}

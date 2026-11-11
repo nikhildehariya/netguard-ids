@@ -1,6 +1,7 @@
 # Environment & Virtual Environments
 venv/
 .env
+keys/.*
 
 # Python & Caching
 __pycache__/

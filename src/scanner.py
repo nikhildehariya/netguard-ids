@@ -11,6 +11,7 @@ import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from typing import Optional
+import ipaddress
 
 try:
     import nmap
@@ -165,9 +166,25 @@ def _device_type(ip: str, is_self: bool = False, vendor: str = "") -> str:
     return "unknown"
 
 
+def validate_subnet(subnet_str: Optional[str]) -> str:
+    """Validate and return safe canonical CIDR subnet string."""
+    if not subnet_str or not str(subnet_str).strip():
+        return _get_local_subnet()
+    s = str(subnet_str).strip()
+    try:
+        net = ipaddress.ip_network(s, strict=False)
+        if net.version != 4:
+            raise ValueError("Only IPv4 subnets are supported")
+        if net.prefixlen < 16:
+            raise ValueError("Subnet prefix too broad (minimum /16 allowed)")
+        return str(net)
+    except Exception as e:
+        raise ValueError(f"Invalid subnet format '{subnet_str}': {e}")
+
+
 def _get_subnet_base(subnet: Optional[str] = None) -> str:
     """Extract base IP from subnet string like 10.233.135.0/24."""
-    target = subnet or _get_local_subnet()
+    target = validate_subnet(subnet) if subnet else _get_local_subnet()
     return target.split("/")[0].rsplit(".", 1)[0]  # e.g. "10.233.135"
 
 

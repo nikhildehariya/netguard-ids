@@ -425,7 +425,7 @@ def patch_admin_alert_settings(req: AlertSettingsUpdateRequest, request: Request
 def predict(record: TrafficRecord, http_request: Request):
     # Secure prediction endpoint: require agent key or client user token
     agent_key = http_request.headers.get("X-Agent-Key")
-    if not (agent_key and agent_key == AGENT_SECRET_KEY):
+    if not (agent_key and hmac.compare_digest(agent_key, AGENT_SECRET_KEY)):
         require_permission(http_request, "view")
     try:
         data = {
@@ -906,7 +906,13 @@ def get_network_devices(request: Request):
 def scan_network(request: Request, subnet: Optional[str] = None):
     """Run full scan: ping sweep + ARP + Nmap. Analyst or admin only."""
     require_permission(request, "capture")
-    from scanner import full_scan, get_cached
+    from scanner import full_scan, get_cached, validate_subnet
+    if subnet:
+        try:
+            subnet = validate_subnet(subnet)
+        except ValueError as err:
+            raise HTTPException(status_code=400, detail=str(err))
+
     import threading
     result = {}
     error = {}
@@ -921,7 +927,6 @@ def scan_network(request: Request, subnet: Optional[str] = None):
     t.start()
     t.join(timeout=120)   # 2 min — ping sweep + nmap needs more time
     if error:
-        from fastapi import HTTPException
         raise HTTPException(status_code=500, detail=error["detail"])
     if t.is_alive():
         cached = get_cached()
@@ -1087,8 +1092,14 @@ def get_research_metrics(request: Request):
 
 
 @app.get("/research/figure/{filename}")
-def get_research_figure(filename: str):
-    """Serve high-resolution research plots for UI rendering safely without path traversal."""
+def get_research_figure(filename: str, request: Request, token: Optional[str] = None):
+    """Serve high-resolution research plots for UI rendering safely with authentication and path confinement."""
+    auth_token = get_token(request) or token
+    if not auth_token:
+        raise HTTPException(status_code=401, detail="Authentication required to view research figures")
+    if not has_permission(auth_token, "view"):
+        raise HTTPException(status_code=403, detail="Insufficient permissions")
+
     # Sanitize and strictly confine to static/figures
     safe_name = os.path.basename(filename)
     if safe_name != filename or ".." in filename or "/" in filename or "\\" in filename:

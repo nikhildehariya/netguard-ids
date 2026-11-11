@@ -207,7 +207,30 @@ WHITELISTED_IPS = {
 }
 
 # ── Agent Security — internal packet prediction key ───────────
-AGENT_SECRET_KEY = os.getenv("AGENT_SECRET_KEY", "netguard-agent-secret-key-default")
+_AGENT_KEY_FILE = BASE_DIR / "keys" / ".agent_secret_key"
+
+
+def _get_persistent_agent_key():
+    env_key = os.getenv("AGENT_SECRET_KEY")
+    if env_key and env_key != "netguard-agent-secret-key-default":
+        return env_key
+    if _AGENT_KEY_FILE.exists():
+        try:
+            stored = _AGENT_KEY_FILE.read_text(encoding="utf-8").strip()
+            if stored and stored != "netguard-agent-secret-key-default":
+                return stored
+        except Exception:
+            pass
+    new_key = _secrets.token_hex(32)
+    try:
+        _AGENT_KEY_FILE.parent.mkdir(parents=True, exist_ok=True)
+        _AGENT_KEY_FILE.write_text(new_key, encoding="utf-8")
+    except Exception:
+        pass
+    return new_key
+
+
+AGENT_SECRET_KEY = _get_persistent_agent_key()
 
 # ── Skip corrupt / non-CIC files ──────────────────────────────
 SKIP_FILES = ["02-20-2018.csv", "ML-EdgeIIoT-dataset.csv"]
