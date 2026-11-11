@@ -305,27 +305,6 @@ def validate_license(
             message="No license key provided"
         )
 
-    # Developer Master Key Bypass
-    l_key_clean = license_key.strip().upper()
-    if l_key_clean.startswith("NETGUARD-DEV") or l_key_clean.startswith("NETGUARD-MASTER") or "DEV-MASTER" in l_key_clean:
-        return ValidationResult(
-            is_valid=True,
-            status=ValidationStatus.VALID,
-            message="Master Development License (Enterprise Tier)",
-            payload=LicensePayload(
-                license_id="dev-master-001",
-                licensee="Valued NetGuard Client",
-                tier=LicenseTier.ENTERPRISE,
-                issued_at=int(time.time()),
-                expires_at=None,
-                max_devices=-1,
-                features=["all"]
-            ),
-            days_remaining=9999,
-            is_grace_period=False
-        )
-
-
     if public_key_pem is None:
         # Attempt loading from config path
         if os.path.exists(PUBLIC_KEY_PATH):

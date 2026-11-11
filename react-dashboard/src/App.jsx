@@ -11,6 +11,7 @@ import DevicesTab from "./components/DevicesTab";
 import UsersTab from "./components/UsersTab";
 import AssistantTab from "./components/AssistantTab";
 import ExplainModal from "./components/ExplainModal";
+import ResearchTab from "./components/ResearchTab";
 
 const API = `http://${(!window.location.hostname || window.location.hostname === "localhost") ? "127.0.0.1" : window.location.hostname}:8081`;
 
@@ -288,9 +289,12 @@ export default function App() {
   const handleActivateLicense = async () => {
     if (!licenseInput.trim()) return;
     try {
+      const activeToken = TokenStore.getAccess() || sessionStorage.getItem("ng_access");
+      const headers = { "Content-Type": "application/json" };
+      if (activeToken) headers["Authorization"] = `Bearer ${activeToken}`;
       const r = await fetch(`${API}/api/license/activate`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers,
         body: JSON.stringify({ key: licenseInput })
       });
       const res = await r.json();
@@ -1068,6 +1072,7 @@ select { color-scheme: dark; } select.dark-input { background: #0a1628 !importan
             { id: "validate", icon: "M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z", label: "Validate" },
             { id: "blocklist", icon: "M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636", label: "Blocklist" },
             { id: "devices", icon: "M9 3H5a2 2 0 00-2 2v4m6-6h10a2 2 0 012 2v4M9 3v18m0 0h10a2 2 0 002-2V9M9 21H5a2 2 0 01-2-2V9m0 0h18", label: "Devices" },
+            { id: "research", icon: "M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z", label: "🔬 Diagnostics & Metrics" },
             { id: "assistant", icon: "M13 10V3L4 14h7v7l9-11h-7z", label: "AI Assistant" },
             ...(currentUser?.role === "admin" ? [{ id: "users", icon: "M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z", label: "Users" }] : []),
           ].map(({ id, icon, label }) => (
@@ -1222,6 +1227,9 @@ select { color-scheme: dark; } select.dark-input { background: #0a1628 !importan
             setActiveTab={setActiveTab}
             API={API}
           />
+        )}
+        {activeTab === "research" && (
+          <ResearchTab token={TokenStore.getAccess()} API={API} themeMode={themeMode} />
         )}
         {activeTab === "assistant" && (
           <AssistantTab token={TokenStore.getAccess()} API={API} themeMode={themeMode} />

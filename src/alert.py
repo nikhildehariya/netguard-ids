@@ -15,6 +15,7 @@ from datetime import datetime, timezone
 import requests
 import hmac
 import hashlib
+import time
 
 from config import (
     ALERT_FROM, ALERT_TO, ALERT_PASS,
@@ -216,8 +217,10 @@ def _send_telegram(result: dict, source_ip: str):
     sev_icon = {"critical": "🔴", "high": "🟠", "none": "🟢"}.get(result["severity"], "⚪")
     
     if source_ip and source_ip != "unknown":
-        sig = hmac.new(SECRET_KEY.encode(), source_ip.encode(), hashlib.sha256).hexdigest()[:16]
-        block_link = f"{API_URL}/api/telegram/block?ip={source_ip}&sig={sig}"
+        expires_at = int(time.time()) + 3600  # 1 hour validity
+        payload = f"{source_ip}:{expires_at}".encode()
+        sig = hmac.new(SECRET_KEY.encode(), payload, hashlib.sha256).hexdigest()[:16]
+        block_link = f"{API_URL}/api/telegram/block?ip={source_ip}&expires={expires_at}&sig={sig}"
         action_line = f"⚡ [🚫 Block IP (1 Hour)]({block_link}) | [Open Dashboard](http://localhost:5174)"
     else:
         action_line = f"[Open Dashboard](http://localhost:5174)"

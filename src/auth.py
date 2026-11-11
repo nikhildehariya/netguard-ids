@@ -182,12 +182,26 @@ def toggle_user_active(username: str) -> dict:
 def _is_locked_out_conn(conn, username: str, ip: str) -> bool:
     cutoff = (datetime.now() - timedelta(minutes=LOCKOUT_MINUTES)).isoformat()
     with conn.cursor() as c:
+        # 1. Per-account lockout (prevents target account credential stuffing)
         c.execute(
-            "SELECT COUNT(*) FROM login_attempts WHERE (username=%s OR ip_address=%s) AND success=0 AND attempted_at>%s",
-            (username, ip, cutoff)
+            "SELECT COUNT(*) FROM login_attempts WHERE username=%s AND success=0 AND attempted_at>%s",
+            (username, cutoff)
         )
-        count = c.fetchone()[0]
-        return count >= MAX_LOGIN_ATTEMPTS
+        user_failed = c.fetchone()[0]
+        if user_failed >= MAX_LOGIN_ATTEMPTS:
+            return True
+
+        # 2. Per-IP spray defense (exempt loopback to prevent shared localhost DoS)
+        if ip not in ("127.0.0.1", "::1", "localhost", "unknown"):
+            c.execute(
+                "SELECT COUNT(*) FROM login_attempts WHERE ip_address=%s AND success=0 AND attempted_at>%s",
+                (ip, cutoff)
+            )
+            ip_failed = c.fetchone()[0]
+            if ip_failed >= (MAX_LOGIN_ATTEMPTS * 4):
+                return True
+
+        return False
 
 def _log_attempt_conn(conn, username: str, ip: str, success: bool):
     with conn.cursor() as c:
@@ -201,15 +215,9 @@ def _log_attempt_conn(conn, username: str, ip: str, success: bool):
 def login(username: str, password: str, ip: str = "unknown") -> dict:
     conn = get_db_connection()
     try:
-        cutoff = (datetime.now() - timedelta(minutes=LOCKOUT_MINUTES)).isoformat()
         with conn.cursor() as c:
             # 1. Lockout check
-            c.execute(
-                "SELECT COUNT(*) FROM login_attempts WHERE (username=%s OR ip_address=%s) AND success=0 AND attempted_at>%s",
-                (username, ip, cutoff)
-            )
-            failed_cnt = c.fetchone()[0]
-            if failed_cnt >= MAX_LOGIN_ATTEMPTS:
+            if _is_locked_out_conn(conn, username, ip):
                 return {
                     "success": False,
                     "message": f"Too many failed attempts. Try again in {LOCKOUT_MINUTES} minutes.",
@@ -305,8 +313,29 @@ def logout(refresh_token: str) -> dict:
     finally:
         release_db_connection(conn)
 
+def is_user_active(username: str) -> bool:
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as c:
+            c.execute("SELECT is_active FROM users WHERE username=%s", (username,))
+            row = c.fetchone()
+            if not row:
+                return False
+            val = row.get("is_active") if isinstance(row, dict) else row[0]
+            return bool(val)
+    except Exception:
+        return False
+    finally:
+        release_db_connection(conn)
+
 def verify_request(token: str) -> Optional[dict]:
-    return _verify_token(token)
+    payload = _verify_token(token)
+    if not payload:
+        return None
+    username = payload.get("sub")
+    if not username or not is_user_active(username):
+        return None
+    return payload
 
 def has_permission(token: str, permission: str) -> bool:
     payload = verify_request(token)

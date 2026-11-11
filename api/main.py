@@ -55,9 +55,24 @@ app = FastAPI(
     version="2.1.0"
 )
 
+ALLOWED_ORIGINS = [
+    "http://localhost:5174",
+    "http://127.0.0.1:5174",
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+    "http://localhost:8081",
+    "http://127.0.0.1:8081",
+]
+custom_origins = os.getenv("CORS_ORIGINS", "")
+if custom_origins:
+    ALLOWED_ORIGINS.extend([o.strip() for o in custom_origins.split(",") if o.strip()])
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=ALLOWED_ORIGINS,
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -726,10 +741,38 @@ def capture_stop(request: Request):
 # ══════════════════════════════════════════════════════════════
 
 @app.get("/api/telegram/block", response_class=HTMLResponse)
-def telegram_quick_block(ip: str, sig: str):
-    """Secure, signed block from Telegram alert."""
-    expected = hmac.new(SECRET_KEY.encode(), ip.encode(), hashlib.sha256).hexdigest()[:16]
-    if not hmac.compare_digest(sig, expected):
+def telegram_quick_block(ip: str, sig: str, expires: int = 0):
+    """Secure, signed, time-limited block from Telegram alert."""
+    current_ts = int(time.time())
+    
+    # 1. Expiration validation
+    if expires and current_ts > expires:
+        return HTMLResponse(
+            status_code=403,
+            content="""
+            <html>
+            <head>
+                <style>
+                    body { background-color: #0f172a; color: #f87171; font-family: sans-serif; text-align: center; padding-top: 100px; }
+                    .card { background-color: #1e293b; border: 1px solid #ef4444; border-radius: 12px; display: inline-block; padding: 30px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+                </style>
+            </head>
+            <body>
+                <div class="card">
+                    <h1>❌ Link Expired</h1>
+                    <p>This quick-block link has expired. Please manage security blocks directly via the NetGuard Dashboard.</p>
+                </div>
+            </body>
+            </html>
+            """
+        )
+
+    # 2. Signature verification
+    payload_with_exp = f"{ip}:{expires}".encode()
+    expected_with_exp = hmac.new(SECRET_KEY.encode(), payload_with_exp, hashlib.sha256).hexdigest()[:16]
+    expected_legacy = hmac.new(SECRET_KEY.encode(), ip.encode(), hashlib.sha256).hexdigest()[:16] if not expires else ""
+
+    if not (hmac.compare_digest(sig, expected_with_exp) or (expected_legacy and hmac.compare_digest(sig, expected_legacy))):
          return HTMLResponse(
              status_code=403,
              content="""
@@ -743,7 +786,7 @@ def telegram_quick_block(ip: str, sig: str):
              <body>
                  <div class="card">
                      <h1>❌ Signature Verification Failed</h1>
-                     <p>The quick-block signature is invalid or has expired.</p>
+                     <p>The quick-block signature is invalid or tampered.</p>
                  </div>
              </body>
              </html>
@@ -921,7 +964,8 @@ def get_license_status():
     return val.to_dict()
 
 @app.post("/api/license/activate")
-def activate_license(req: LicenseActivationRequest):
+def activate_license(req: LicenseActivationRequest, request: Request):
+    require_permission(request, "manage_users")
     val = validate_license(req.key.strip())
     if not val.is_valid:
         raise HTTPException(status_code=400, detail=val.message)
@@ -997,3 +1041,72 @@ def assistant_chat(req: AssistantQueryRequest, request: Request):
         return process_copilot_query(req.query)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ══════════════════════════════════════════════════════════════
+# RESEARCH & IEEE BENCHMARK METRICS ENDPOINTS
+# ══════════════════════════════════════════════════════════════
+
+@app.get("/research/metrics")
+def get_research_metrics(request: Request):
+    """Serve all pre-computed IEEE benchmarks, latencies, and real Edge-IIoTset results."""
+    require_permission(request, "view")
+    root_dir = Path(__file__).resolve().parent.parent
+    results_search_dirs = [
+        root_dir / "logs" / "benchmarks",
+        root_dir / "logs" / "diagnostics",
+    ]
+    
+    def load_json(name):
+        import json
+        for sdir in results_search_dirs:
+            p = sdir / name
+            if p.exists():
+                try:
+                    with open(p, "r", encoding="utf-8") as f:
+                        return json.load(f)
+                except Exception:
+                    continue
+        return {}
+
+    return {
+        "status": "ready",
+        "baselines": load_json("baseline_comparison.json"),
+        "edge_hardware": load_json("edge_hardware_profile.json"),
+        "iot_protocols": load_json("iot_protocol_evaluation.json"),
+        "edge_iiot_benchmark": load_json("edge_iiot_real_benchmark.json"),
+        "figures": [
+            "confusion_matrix_cascade.png",
+            "roc_curves_multiclass.png",
+            "pr_curves_multiclass.png",
+            "shap_global_bar_importance.png",
+            "shap_summary_beeswarm.png",
+            "shap_waterfall_attack.png"
+        ]
+    }
+
+
+@app.get("/research/figure/{filename}")
+def get_research_figure(filename: str):
+    """Serve high-resolution research plots for UI rendering safely without path traversal."""
+    # Sanitize and strictly confine to static/figures
+    safe_name = os.path.basename(filename)
+    if safe_name != filename or ".." in filename or "/" in filename or "\\" in filename:
+        raise HTTPException(status_code=400, detail="Invalid figure filename")
+    
+    allowed_extensions = {".png", ".jpg", ".jpeg", ".svg"}
+    if not any(safe_name.lower().endswith(ext) for ext in allowed_extensions):
+        raise HTTPException(status_code=400, detail="Unsupported figure format")
+
+    root_dir = Path(__file__).resolve().parent.parent
+    figures_dir = (root_dir / "static" / "figures").resolve()
+    target = (figures_dir / safe_name).resolve()
+
+    if not target.is_relative_to(figures_dir):
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    if target.exists() and target.is_file():
+        media = "image/svg+xml" if safe_name.lower().endswith(".svg") else "image/png"
+        return FileResponse(target, media_type=media)
+    raise HTTPException(status_code=404, detail="Figure not found")
+

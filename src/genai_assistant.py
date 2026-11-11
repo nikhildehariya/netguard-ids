@@ -99,21 +99,7 @@ def _query_gemini_api(user_query: str, system_prompt: str) -> Optional[str]:
     ]
 
     try:
-        import ssl
-        from requests.adapters import HTTPAdapter
-        from urllib3.util.ssl_ import create_urllib3_context
-
-        class TLSAdapter(HTTPAdapter):
-            def init_poolmanager(self, *args, **kwargs):
-                ctx = create_urllib3_context()
-                ctx.check_hostname = False
-                ctx.verify_mode = ssl.CERT_NONE
-                kwargs['ssl_context'] = ctx
-                return super().init_poolmanager(*args, **kwargs)
-
         s = requests.Session()
-        s.mount('https://', TLSAdapter())
-        s.trust_env = False
         headers = {"Content-Type": "application/json"}
         payload = {
             "contents": [
