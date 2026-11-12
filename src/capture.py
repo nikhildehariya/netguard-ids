@@ -1,3 +1,4 @@
+import os
 import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -18,6 +19,30 @@ from pcap_forensics import record_raw_packet
 from dpi_decoders import inspect_industrial_payload
 
 _DISPATCH_POOL = ThreadPoolExecutor(max_workers=4, thread_name_prefix="netguard_dispatch")
+
+_LOCK_FILE_HANDLE = None
+
+def acquire_capture_lock():
+    """Ensure only one sniffer process runs system-wide using OS kernel file locks."""
+    global _LOCK_FILE_HANDLE
+    lock_path = Path(__file__).resolve().parent.parent / "logs" / "capture.lock"
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        _LOCK_FILE_HANDLE = open(lock_path, "a+")
+        if sys.platform == "win32":
+            import msvcrt
+            msvcrt.locking(_LOCK_FILE_HANDLE.fileno(), msvcrt.LK_NBLCK, 1)
+        else:
+            import fcntl
+            fcntl.flock(_LOCK_FILE_HANDLE.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        _LOCK_FILE_HANDLE.seek(0)
+        _LOCK_FILE_HANDLE.truncate()
+        _LOCK_FILE_HANDLE.write(str(os.getpid()))
+        _LOCK_FILE_HANDLE.flush()
+        return True
+    except (IOError, OSError):
+        print("[capture] Another sniffer instance is already active (lock held). Exiting gracefully.")
+        sys.exit(0)
 
 try:
     from scapy.all import sniff, IP, TCP, UDP, ICMP
@@ -318,6 +343,7 @@ def flush_flows():
 
 def start_capture(interface: str):
     global capture_running
+    acquire_capture_lock()
     capture_running = True
 
     if interface in ("eth0", "auto", "", "default") or (sys.platform == "win32" and not interface.startswith(("\\Device\\NPF_", "{"))):

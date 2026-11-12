@@ -1,5 +1,4 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { LineChart, Line, AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
 
 import { COLORS, SEV_COLOR, Pill, StatCard, SectionTitle, Divider } from "./components/Common";
 import OverviewTab from "./components/OverviewTab";
@@ -13,7 +12,7 @@ import AssistantTab from "./components/AssistantTab";
 import ExplainModal from "./components/ExplainModal";
 import ResearchTab from "./components/ResearchTab";
 
-const API = import.meta.env.VITE_API_URL || (typeof window !== "undefined" && (window.location.port === "5174" || window.location.port === "5173") ? "http://127.0.0.1:8081" : "");
+const API = import.meta.env.VITE_API_URL || "";
 
 
 const PRESETS = {
@@ -625,7 +624,10 @@ export default function App() {
     } catch { showToast("Report failed", "error"); }
   };
 
+  if (!auth) return <LoginScreen onLogin={(user) => { setCurrentUser(user); setAuth(true); }} />;
+
   if (license.status === "expired") {
+    const isAdmin = currentUser?.role === "admin";
     return (
       <div style={{ minHeight: "100vh", background: "linear-gradient(135deg, #090514 0%, #030107 100%)", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'Space Grotesk', system-ui, sans-serif", color: "#e2e8f0", padding: 20 }}>
         <div style={{ width: 480, background: "rgba(20,10,35,0.7)", border: "1px solid rgba(239,68,68,0.25)", borderRadius: 24, padding: 40, backdropFilter: "blur(20px)", boxShadow: "0 20px 50px rgba(0,0,0,0.6), 0 0 40px rgba(239,68,68,0.05)", textAlign: "center" }}>
@@ -647,41 +649,41 @@ export default function App() {
             
             <div style={{ height: 1, background: "rgba(255,255,255,0.05)", margin: "12px 0" }} />
             
-            <div style={{ fontSize: 11, color: "#475569", textTransform: "uppercase", letterSpacing: "0.1em", fontWeight: 700, marginBottom: 4 }}>Contact Security Provider</div>
-            <div style={{ fontSize: 13, color: "#38bdf8", fontWeight: 600 }}>Nikhil Dehariya</div>
-            <div style={{ fontSize: 11, color: "#64748b", marginTop: 2 }}>Email: nikhil@netguard.com</div>
+            <div style={{ fontSize: 11, color: "#475569", textTransform: "uppercase", letterSpacing: "0.1em", fontWeight: 700, marginBottom: 4 }}>Logged in as</div>
+            <div style={{ fontSize: 13, color: "#38bdf8", fontWeight: 600 }}>{currentUser?.username || "User"} ({currentUser?.role || "viewer"})</div>
           </div>
 
-          {/* License input */}
-          <div style={{ textAlign: "left", marginBottom: 16 }}>
-            <label style={{ fontSize: 11, color: "#64748b", letterSpacing: "0.1em", textTransform: "uppercase", display: "block", marginBottom: 8, fontWeight: 600 }}>Enter Activation License Key</label>
-            <input type="text" value={licenseInput} onChange={e => setLicenseInput(e.target.value)} placeholder="NETGUARD-YYYYMMDD-XXXXXX" style={{ width: "100%", background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 10, padding: "12px 14px", color: "#f1f5f9", fontSize: 14, outline: "none", fontFamily: "monospace" }} />
-          </div>
+          {isAdmin ? (
+            <>
+              {/* License input */}
+              <div style={{ textAlign: "left", marginBottom: 16 }}>
+                <label style={{ fontSize: 11, color: "#64748b", letterSpacing: "0.1em", textTransform: "uppercase", display: "block", marginBottom: 8, fontWeight: 600 }}>Enter Activation License Key</label>
+                <input type="text" value={licenseInput} onChange={e => setLicenseInput(e.target.value)} placeholder="NETGUARD-YYYYMMDD-XXXXXX" style={{ width: "100%", background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 10, padding: "12px 14px", color: "#f1f5f9", fontSize: 14, outline: "none", fontFamily: "monospace" }} />
+              </div>
 
-          {licensingError && (
-            <div style={{ color: "#ef4444", fontSize: 12, marginBottom: 16, background: "rgba(239,68,68,0.08)", padding: "8px 12px", borderRadius: 8, border: "1px solid rgba(239,68,68,0.15)" }}>
-              ❌ {licensingError}
+              {licensingError && (
+                <div style={{ color: "#ef4444", fontSize: 12, marginBottom: 16, background: "rgba(239,68,68,0.08)", padding: "8px 12px", borderRadius: 8, border: "1px solid rgba(239,68,68,0.15)" }}>
+                  ❌ {licensingError}
+                </div>
+              )}
+
+              <button onClick={handleActivateLicense} style={{ width: "100%", background: "linear-gradient(135deg, #ef4444, #b91c1c)", border: "none", borderRadius: 12, padding: "14px", color: "white", fontSize: 14, fontWeight: 700, cursor: "pointer", boxShadow: "0 4px 20px rgba(239,68,68,0.2)", marginBottom: 12 }}>
+                Activate License Key →
+              </button>
+            </>
+          ) : (
+            <div style={{ fontSize: 13, color: "#f97316", marginBottom: 16 }}>
+              Administrator credentials required to renew license. Please contact your system administrator.
             </div>
           )}
 
-          <button onClick={handleActivateLicense} style={{ width: "100%", background: "linear-gradient(135deg, #ef4444, #b91c1c)", border: "none", borderRadius: 12, padding: "14px", color: "white", fontSize: 14, fontWeight: 700, cursor: "pointer", boxShadow: "0 4px 20px rgba(239,68,68,0.2)" }}>
-            Activate License Key →
+          <button onClick={handleLogout} style={{ background: "transparent", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, padding: "8px 16px", color: "#94a3b8", fontSize: 12, cursor: "pointer" }}>
+            Sign Out
           </button>
         </div>
       </div>
     );
   }
-
-  if (!auth) return <LoginScreen onLogin={(user) => { setCurrentUser(user); setAuth(true); }} />;
-
-  const TABS = [
-    { id: "overview",  icon: "⌂", label: "Overview" },
-    { id: "capture",   icon: "⚡", label: "Capture" },
-    { id: "incidents", icon: "△", label: "Incidents" },
-    { id: "validate",  icon: "◎", label: "Validate" },
-    { id: "blocklist", icon: "⊘", label: "Blocklist" },
-    ...(currentUser?.role === "admin" ? [{ id: "users", icon: "👥", label: "Users" }] : []),
-  ];
 
   return (
     <div className={`theme-${themeMode}`} style={{ minHeight: "100vh", background: "#020810", color: "#e2e8f0", fontFamily: "'Space Grotesk', system-ui, sans-serif" }}>

@@ -58,10 +58,6 @@ app = FastAPI(
 ALLOWED_ORIGINS = [
     "http://localhost:5174",
     "http://127.0.0.1:5174",
-    "http://localhost:5173",
-    "http://127.0.0.1:5173",
-    "http://localhost:3000",
-    "http://127.0.0.1:3000",
     "http://localhost:8081",
     "http://127.0.0.1:8081",
 ]
@@ -87,9 +83,32 @@ def _capture_log_tail(lines: int = 8) -> str:
     return "\n".join(CAPTURE_LOG_PATH.read_text(errors="ignore").splitlines()[-lines:])
 
 
+def is_capture_running_systemwide() -> bool:
+    lock_path = Path(__file__).resolve().parent.parent / "logs" / "capture.lock"
+    if not lock_path.exists():
+        return False
+    try:
+        f = open(lock_path, "a+")
+        if sys.platform == "win32":
+            import msvcrt
+            msvcrt.locking(f.fileno(), msvcrt.LK_NBLCK, 1)
+            msvcrt.locking(f.fileno(), msvcrt.LK_UNLCK, 1)
+        else:
+            import fcntl
+            fcntl.flock(f.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+        f.close()
+        return False
+    except (IOError, OSError):
+        return True
+
+
 def auto_start_live_capture():
     global capture_process
     if capture_process is not None and capture_process.poll() is None:
+        return
+    if is_capture_running_systemwide():
+        print("[api] Live capture is already active system-wide (NSSM service or standalone). Skipping auto-start.")
         return
     iface = "auto"
     if conf is not None and hasattr(conf, "iface") and conf.iface:
@@ -550,20 +569,22 @@ def health():
 @app.get("/detections")
 def history(limit: int = 100, mode: str = "live", request: Request = None):
     # FIX: require "view" permission so viewer/analyst can access dashboard data
-    require_permission(request, "view")
-    df = load_history(limit=limit, mode=mode)
+    payload = require_permission(request, "view")
+    tenant = (payload.get("tenant_id") if payload else None) or "default"
+    df = load_history(limit=limit, mode=mode, tenant_id=tenant)
     if df.empty and mode == "live":
-        df = load_history(limit=limit, mode="all")
+        df = load_history(limit=limit, mode="all", tenant_id=tenant)
     return df.tail(limit).to_dict(orient="records")
 
 
 @app.get("/stats")
 def stats(mode: str = "live", limit: int | None = None, request: Request = None):
     # FIX: require "view" permission
-    require_permission(request, "view")
-    df = load_history(limit=limit, mode=mode)
+    payload = require_permission(request, "view")
+    tenant = (payload.get("tenant_id") if payload else None) or "default"
+    df = load_history(limit=limit, mode=mode, tenant_id=tenant)
     if df.empty and mode == "live":
-        df = load_history(limit=limit, mode="all")
+        df = load_history(limit=limit, mode="all", tenant_id=tenant)
     if df.empty:
         return {
             "total": 0, "by_class": {}, "by_triage_status": {},
@@ -945,8 +966,13 @@ def scan_network(request: Request, subnet: Optional[str] = None):
 def scan_arp_only(request: Request, subnet: Optional[str] = None):
     """Quick scan: ping sweep + ARP only (no Nmap). Analyst or admin only."""
     require_permission(request, "capture")
-    from scanner import arp_scan, update_cache
+    from scanner import arp_scan, update_cache, validate_subnet
     from datetime import datetime
+    if subnet:
+        try:
+            subnet = validate_subnet(subnet)
+        except ValueError as err:
+            raise HTTPException(status_code=400, detail=str(err))
     devices = arp_scan(subnet, do_ping_sweep=False)
     timestamp = datetime.now().isoformat(timespec="seconds")
     update_cache(devices, timestamp)

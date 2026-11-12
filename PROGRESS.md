@@ -83,10 +83,24 @@ The 8 major vulnerabilities identified during the initial code audit have been v
 
 | Priority | Item & Location | Risk Description | Remediation Plan | Status |
 | :---: | :--- | :--- | :--- | :---: |
-| ⚡ **Medium** | **Default `AGENT_SECRET_KEY` Fallback**<br>`src/config.py:210` & `api/main.py:375` | If `AGENT_SECRET_KEY` is not set in `.env`, fallback string `"netguard-agent-secret-key-default"` allows unauthenticated `/predict` calls. | Auto-generate a persistent cryptographically random agent key on initial launch if unset. | ✅ **FIXED** |
-| ⚡ **Medium** | **Default Admin Password Console Logging**<br>`src/auth.py:47-51` | Default `"netguard123"` password printed to console/logs on database initialization. | Silence plaintext password printing; output warning prompting immediate password update. | ✅ **FIXED** |
-| ℹ️ **Low** | **Unauthenticated Figure Endpoint**<br>`api/main.py:1089` | `/research/figure/{filename}` is path-safe but lacks user authentication. | Add `require_permission(request, "view")` to ensure only logged-in users view figures. | ✅ **FIXED** |
-| ℹ️ **Low** | **Subnet Input Validation**<br>`src/scanner.py` & `api/main.py:900` | Network scanner accepts `subnet` parameter without strict CIDR validation. | Validate input using `ipaddress.ip_network(subnet, strict=False)` before executing ping/Nmap sweeps. | ✅ **FIXED** |
+| ⚡ **Medium** | **Default `AGENT_SECRET_KEY` Fallback**<br>`src/config.py:210` & `api/main.py:375` | If `AGENT_SECRET_KEY` is not set in `.env`, fallback string `"netguard-agent-secret-key-default"` allows unauthenticated `/predict` calls. | Auto-generate a persistent cryptographically random agent key on initial launch if unset. | ✅ **RESOLVED** |
+| ⚡ **Medium** | **Default Admin Password Console Logging**<br>`src/auth.py:47-51` | Default `"netguard123"` password printed to console/logs on database initialization. | Silence plaintext password printing; output warning prompting immediate password update. | ✅ **RESOLVED** |
+| ℹ️ **Low** | **Unauthenticated Figure Endpoint**<br>`api/main.py:1089` | `/research/figure/{filename}` is path-safe but lacks user authentication. | Add `require_permission(request, "view")` to ensure only logged-in users view figures. | ✅ **RESOLVED** |
+| ℹ️ **Low** | **Subnet Input Validation**<br>`src/scanner.py` & `api/main.py:900` | Network scanner accepts `subnet` parameter without strict CIDR validation. | Validate input using `ipaddress.ip_network(subnet, strict=False)` before executing ping/Nmap sweeps. | ✅ **RESOLVED** |
+
+---
+
+### C. Startup Launch & Operational Deadlocks (Audit Findings)
+Operational, UI state, and multi-tenancy edge-case factors identified during line-by-line inspection:
+
+| Priority | Issue & Location | Risk Description | Remediation Plan | Status |
+| :---: | :--- | :--- | :--- | :---: |
+| 🚨 **CRITICAL** | **Expired License Renewal Deadlock**<br>`react-dashboard/src/App.jsx:628` | When a license expires, the lockout screen renders BEFORE the user logs in. Activating a new key sends an unauthenticated request causing `401 Unauthorized`, permanently locking the customer out of renewing via the UI. | Reorder checks: render `LoginScreen` first so admin authenticates, enabling the renewal screen to pass the Bearer token to `/api/license/activate`. | ✅ **RESOLVED** |
+| ⚠️ **HIGH** | **Dual Packet Sniffer Process Conflict**<br>`api/main.py:130` & NSSM `NetGuard-Capture` | NSSM service runs `capture.py`, and `api/main.py` auto-starts a second instance of `capture.py` on boot, causing duplicate flow tables and double CPU/RAM usage. | Implement a system-wide process mutex/pidfile lock in `src/capture.py` so secondary instances exit gracefully. | ✅ **RESOLVED** |
+| ⚡ **MEDIUM** | **Multi-Tenant Telemetry Parameter Pass**<br>`api/main.py:551` (`/history`, `/stats`) | While `src/detections_db.py` supports `tenant_id`, `/history` and `/stats` endpoints in `api/main.py` fail to pass `payload["tenant_id"]` into `load_history()`, defaulting to `"default"`. | Extract `tenant_id = payload.get("tenant_id", "default")` from JWT in `api/main.py` and pass to `load_history()`. | ✅ **RESOLVED** |
+| ℹ️ **LOW** | **Refresh Token Rotation (RTR) Gap**<br>`src/auth.py:287` | `/auth/refresh` issues new access tokens without revoking/rotating the refresh token, exposing 7-day replay risk. | Invalidate previous refresh token and issue a single-use replacement on each refresh. | ✅ **RESOLVED** |
+| ℹ️ **LOW** | **Dead Variables & Unused Imports in UI**<br>`react-dashboard/src/App.jsx:677` | Unused `const TABS = [...]` array and top-level Recharts imports linger after tab modularization. | Remove dead code and unused imports to streamline bundle size and clarity. | ✅ **RESOLVED** |
+| ℹ️ **LOW** | **Residual Dev Ports in CORS**<br>`api/main.py:58-67` | `ALLOWED_ORIGINS` still whitelists legacy development ports 5173 and 3000 after permanent migration to 5174. | Tighten `ALLOWED_ORIGINS` strictly to port 5174 and production frontend domains. | ✅ **RESOLVED** |
 
 ---
 

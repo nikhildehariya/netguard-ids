@@ -289,21 +289,41 @@ def refresh_access_token(refresh_token: str) -> dict:
     conn = get_db_connection()
     try:
         with conn.cursor() as c:
+            now_iso = datetime.now().isoformat()
             c.execute(
                 "SELECT rt.user_id, u.username, u.role, u.tenant_id FROM refresh_tokens rt JOIN users u ON rt.user_id=u.id "
                 "WHERE rt.token_hash=%s AND rt.revoked=0 AND rt.expires_at>%s",
-                (token_hash, datetime.now().isoformat())
+                (token_hash, now_iso)
             )
             row = c.fetchone()
             if not row:
                 return {"success": False, "message": "Invalid or expired refresh token"}
 
             user_id, username, role, tenant_id = row
+
+            # 1. Revoke the used refresh token (RTR)
+            c.execute("UPDATE refresh_tokens SET revoked=1 WHERE token_hash=%s", (token_hash,))
+
+            # 2. Issue new replacement refresh token
+            new_refresh_raw = secrets.token_hex(32)
+            new_refresh_hash = hashlib.sha256(new_refresh_raw.encode()).hexdigest()
+            new_refresh_exp = (datetime.now() + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)).isoformat()
+            c.execute(
+                "INSERT INTO refresh_tokens (user_id, token_hash, expires_at, created_at, revoked) VALUES (%s,%s,%s,%s,0)",
+                (user_id, new_refresh_hash, new_refresh_exp, now_iso)
+            )
+            conn.commit()
+
             access_token = _sign(
                 {"sub": username, "role": role, "uid": user_id, "tenant_id": tenant_id or "default", "type": "access"},
                 SECRET_KEY, ACCESS_TOKEN_EXPIRE_MINUTES
             )
-            return {"success": True, "access_token": access_token, "expires_in": ACCESS_TOKEN_EXPIRE_MINUTES * 60}
+            return {
+                "success": True,
+                "access_token": access_token,
+                "refresh_token": new_refresh_raw,
+                "expires_in": ACCESS_TOKEN_EXPIRE_MINUTES * 60
+            }
     finally:
         release_db_connection(conn)
 
