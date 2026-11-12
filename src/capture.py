@@ -14,6 +14,8 @@ from concurrent.futures import ThreadPoolExecutor
 
 from config import API_URL, AGENT_SECRET_KEY
 from stream_producer import dispatch_flow
+from pcap_forensics import record_raw_packet
+from dpi_decoders import inspect_industrial_payload
 
 _DISPATCH_POOL = ThreadPoolExecutor(max_workers=4, thread_name_prefix="netguard_dispatch")
 
@@ -190,6 +192,12 @@ def send_to_api(features: dict):
 
 def process_packet(pkt):
     global flows
+
+    # Record in rolling forensic ring buffer (zero disk impact)
+    try:
+        record_raw_packet(pkt)
+    except Exception:
+        pass
 
     if not pkt.haslayer(IP):
         return

@@ -302,4 +302,14 @@ def handle_alert(result: dict, source_ip: str = "unknown",
         threading.Thread(target=_send_email, args=(result, source_ip), daemon=True).start()
         threading.Thread(target=_send_telegram, args=(result, source_ip), daemon=True).start()
         threading.Thread(target=export_all_siem_channels, args=(result, source_ip), daemon=True).start()
+        if result.get("severity") in ("critical", "high"):
+            try:
+                from pcap_forensics import trigger_alert_pcap
+                threading.Thread(
+                    target=trigger_alert_pcap,
+                    args=(source_ip, result.get("prediction", "ATTACK"), result.get("severity", "critical")),
+                    daemon=True
+                ).start()
+            except Exception:
+                pass
         _maybe_auto_block(result, source_ip)

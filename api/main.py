@@ -1121,3 +1121,58 @@ def get_research_figure(filename: str, request: Request, token: Optional[str] = 
         return FileResponse(target, media_type=media)
     raise HTTPException(status_code=404, detail="Figure not found")
 
+
+# ══════════════════════════════════════════════════════════════
+# AUTOMATED PCAP FORENSICS & INDUSTRIAL DPI (PHASE 7)
+# ══════════════════════════════════════════════════════════════
+
+@app.get("/forensics/pcaps")
+def get_forensic_pcaps(request: Request):
+    """List all available automated incident PCAP captures for Wireshark analysis."""
+    require_permission(request, "view")
+    from pcap_forensics import list_forensic_pcaps
+    return {"pcaps": list_forensic_pcaps()}
+
+
+@app.get("/forensics/download/{filename}")
+def download_forensic_pcap(filename: str, request: Request, token: Optional[str] = None):
+    """Download an automated incident PCAP dump safely with path traversal defense."""
+    auth_token = get_token(request) or token
+    if not auth_token:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    if not (has_permission(auth_token, "report") or has_permission(auth_token, "view")):
+        raise HTTPException(status_code=403, detail="Insufficient permissions")
+
+    safe_name = os.path.basename(filename)
+    if safe_name != filename or ".." in filename or "/" in filename or "\\" in filename:
+        raise HTTPException(status_code=400, detail="Invalid pcap filename")
+    if not safe_name.lower().endswith(".pcap"):
+        raise HTTPException(status_code=400, detail="Only .pcap files are downloadable")
+
+    root_dir = Path(__file__).resolve().parent.parent
+    forensics_dir = (root_dir / "reports" / "forensics").resolve()
+    target = (forensics_dir / safe_name).resolve()
+
+    if not target.is_relative_to(forensics_dir):
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    if target.exists() and target.is_file():
+        return FileResponse(
+            target,
+            media_type="application/vnd.tcpdump.pcap",
+            filename=safe_name,
+            headers={"Content-Disposition": f'attachment; filename="{safe_name}"'}
+        )
+    raise HTTPException(status_code=404, detail="Forensic PCAP not found")
+
+
+@app.post("/forensics/trigger-dump")
+def manual_pcap_dump(request: Request, source_ip: str = "127.0.0.1", label: str = "MANUAL_INVESTIGATION"):
+    """Manually trigger a 60-second forensic PCAP snapshot from the rolling packet buffer."""
+    require_permission(request, "capture")
+    from pcap_forensics import trigger_alert_pcap
+    pcap_path = trigger_alert_pcap(source_ip=source_ip, prediction=label, severity="high")
+    if pcap_path:
+        return {"success": True, "pcap_path": os.path.basename(pcap_path), "message": "Forensic PCAP successfully captured"}
+    return {"success": False, "message": "Packet buffer is currently empty or capture is offline"}
+
