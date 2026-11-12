@@ -547,6 +547,7 @@ def health():
 
 
 @app.get("/history")
+@app.get("/detections")
 def history(limit: int = 100, mode: str = "live", request: Request = None):
     # FIX: require "view" permission so viewer/analyst can access dashboard data
     require_permission(request, "view")
@@ -850,6 +851,7 @@ def bulk_unblock_ips(req: BulkUnblockRequest, request: Request):
 
 
 @app.get("/blocked-ips")
+@app.get("/blocklist")
 def blocked_ips(request: Request):
     """List all currently blocked IPs."""
     require_permission(request, "view")

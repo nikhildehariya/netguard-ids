@@ -16,7 +16,8 @@ def load_history(limit: int | None = None, mode: str = "live", path: str | Path 
                  tenant_id: str = "default") -> pd.DataFrame:
     """Load detections from SQLite with optional tenant filtering."""
     from datetime import timedelta
-    rows = load_detections(limit=50000, mode=mode, tenant_id=tenant_id)
+    fetch_limit = limit if (limit and limit > 0) else (5000 if (hours or start or end) else 1000)
+    rows = load_detections(limit=fetch_limit, mode=mode, tenant_id=tenant_id)
     if not rows:
         return pd.DataFrame(columns=LOG_COLUMNS)
     df = pd.DataFrame(rows)
