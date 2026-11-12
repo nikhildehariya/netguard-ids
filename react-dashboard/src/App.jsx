@@ -13,7 +13,7 @@ import AssistantTab from "./components/AssistantTab";
 import ExplainModal from "./components/ExplainModal";
 import ResearchTab from "./components/ResearchTab";
 
-const API = `http://${(!window.location.hostname || window.location.hostname === "localhost") ? "127.0.0.1" : window.location.hostname}:8081`;
+const API = import.meta.env.VITE_API_URL || "";
 
 
 const PRESETS = {

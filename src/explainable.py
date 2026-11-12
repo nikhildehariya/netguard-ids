@@ -45,14 +45,27 @@ BASELINE_THRESHOLDS = {
     "Bwd Pkt Len Max":   1400.0,
 }
 
+# ── Production TreeSHAP Engine (Lazy-Loaded) ─────────────────
+_SHAP_EXPLAINER_INSTANCE = None
+
+def _get_shap_explainer():
+    global _SHAP_EXPLAINER_INSTANCE
+    if _SHAP_EXPLAINER_INSTANCE is None:
+        try:
+            try:
+                from src.xai import TreeSHAPExplainer
+            except ImportError:
+                from xai import TreeSHAPExplainer
+            _SHAP_EXPLAINER_INSTANCE = TreeSHAPExplainer()
+        except Exception as e:
+            _SHAP_EXPLAINER_INSTANCE = False
+    return _SHAP_EXPLAINER_INSTANCE if _SHAP_EXPLAINER_INSTANCE is not False else None
+
 
 def explain_prediction(traffic_record: dict, prediction_result: dict) -> dict:
     """
     Generate Explainable AI (XAI) feature attribution breakdown for a traffic record.
-    Returns:
-      - top_contributing_features: list of dicts with feature name, value, impact score, and description.
-      - threat_summary: human-readable explanation of why the flow was flagged.
-      - recommendations: action items for security analysts.
+    Uses real mathematical TreeSHAP when available, with automatic rule-based fallback.
     """
     prediction = prediction_result.get("prediction", "NORMAL")
     confidence = prediction_result.get("confidence", 0.0)
@@ -60,6 +73,26 @@ def explain_prediction(traffic_record: dict, prediction_result: dict) -> dict:
 
     contributions = []
     reasons = []
+
+    # Attempt True TreeSHAP Attribution first
+    shap_explainer = _get_shap_explainer()
+    if shap_explainer and prediction != "ZERO_DAY_ANOMALY":
+        try:
+            shap_res = shap_explainer.explain_instance(traffic_record, top_k=5)
+            for item in shap_res.get("top_shap_contributions", []):
+                val = item["value"]
+                val_str = f"{val:,.1f}" if isinstance(val, (int, float)) else str(val)
+                contributions.append({
+                    "feature": item["feature"],
+                    "value": val_str,
+                    "contribution": float(item["importance_weight"]),
+                    "label": f"SHAP Impact: {item['impact'].capitalize()} (Score: {item['shap_value']:+.4f})",
+                    "severity": "high" if item["importance_weight"] > 0.25 else "medium"
+                })
+                reasons.append(f"Feature '{item['feature']}' exerted significant Shapley attribution ({item['shap_value']:+.4f}) driving {prediction} classification.")
+        except Exception:
+            contributions.clear()
+            reasons.clear()
 
     # 1. Analyze Destination Port & Protocol
     dst_port = float(traffic_record.get("Dst Port", 0))

@@ -28,6 +28,7 @@ from config import (
 from blocklist import block_ip
 from alert_settings import get_alert_email_target
 from database import get_db_connection, release_db_connection
+from webhook_exporters import export_all_siem_channels
 
 _db_lock = threading.Lock()
 
@@ -300,4 +301,5 @@ def handle_alert(result: dict, source_ip: str = "unknown",
               f"({result['confidence']*100:.1f}% confidence)")
         threading.Thread(target=_send_email, args=(result, source_ip), daemon=True).start()
         threading.Thread(target=_send_telegram, args=(result, source_ip), daemon=True).start()
+        threading.Thread(target=export_all_siem_channels, args=(result, source_ip), daemon=True).start()
         _maybe_auto_block(result, source_ip)

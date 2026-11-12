@@ -22,3 +22,8 @@ python-dotenv==1.0.1
 requests==2.31.0
 reportlab==4.2.2
 python-nmap==0.7.1
+
+# Explainability & Visualizations (XAI & Benchmarks)
+shap==0.45.1
+matplotlib>=3.8.0
+

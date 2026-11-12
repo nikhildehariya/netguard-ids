@@ -64,7 +64,16 @@ class IntrusionDetector:
                 raw_score    = float(self.iforest.decision_function(X)[0]) # lower/negative = more anomalous
                 # Convert raw_score (typical range -0.5 to 0.5) to normalized score in [0.0, 1.0]
                 anomaly_score = float(np.clip(0.5 - raw_score, 0.0, 1.0))
-                if iforest_pred == -1 or anomaly_score > 0.65:
+                
+                # Domain-Adaptive Thresholding:
+                # IoT specific ports (MQTT:1883, Modbus:502, CoAP:5683) or extreme packet bursts
+                dst_port = float(traffic_record.get("Dst Port", 0))
+                flow_pkts_s = float(traffic_record.get("Flow Pkts/s", 0))
+                is_iot_port = dst_port in [1883, 502, 5683, 8883, 4840]
+                
+                # Adaptive threshold: 0.55 on IoT vectors / high burst, 0.65 on standard traffic
+                threshold = 0.55 if (is_iot_port or flow_pkts_s > 1000) else 0.65
+                if iforest_pred == -1 or anomaly_score > threshold:
                     is_anomaly = True
             except Exception as e:
                 print(f"[detector] Isolation Forest prediction error: {e}")

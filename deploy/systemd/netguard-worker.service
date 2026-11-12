@@ -1,0 +1,18 @@
+[Unit]
+Description=NetGuard IDS Redis Streams Worker
+After=network.target netguard-api.service redis.service
+Requires=redis.service
+
+[Service]
+Type=simple
+User=netguard
+Group=netguard
+WorkingDirectory=/opt/netguard
+EnvironmentFile=/opt/netguard/.env
+ExecStart=/opt/netguard/venv/bin/python src/stream_consumer.py
+Restart=always
+RestartSec=5
+LimitNOFILE=65535
+
+[Install]
+WantedBy=multi-user.target

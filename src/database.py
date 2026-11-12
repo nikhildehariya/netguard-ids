@@ -189,7 +189,8 @@ def init_pg_db():
                         last_login    VARCHAR(100),
                         full_name     VARCHAR(255) DEFAULT '',
                         phone         VARCHAR(50) DEFAULT '',
-                        designation   VARCHAR(255) DEFAULT ''
+                        designation   VARCHAR(255) DEFAULT '',
+                        tenant_id     VARCHAR(100) NOT NULL DEFAULT 'default'
                     );
                     CREATE TABLE IF NOT EXISTS refresh_tokens (
                         id         SERIAL PRIMARY KEY,
@@ -219,7 +220,8 @@ def init_pg_db():
                         severity    VARCHAR(50) NOT NULL DEFAULT 'none',
                         source_ip   VARCHAR(100) NOT NULL DEFAULT 'unknown',
                         flow_id     VARCHAR(255) NOT NULL DEFAULT '',
-                        mode        VARCHAR(50) NOT NULL DEFAULT 'live'
+                        mode        VARCHAR(50) NOT NULL DEFAULT 'live',
+                        tenant_id   VARCHAR(100) NOT NULL DEFAULT 'default'
                     );
                     CREATE TABLE IF NOT EXISTS blocked_ips (
                         ip          VARCHAR(100) PRIMARY KEY,
@@ -254,7 +256,8 @@ def init_pg_db():
                         last_login    TEXT,
                         full_name     TEXT DEFAULT '',
                         phone         TEXT DEFAULT '',
-                        designation   TEXT DEFAULT ''
+                        designation   TEXT DEFAULT '',
+                        tenant_id     TEXT NOT NULL DEFAULT 'default'
                     );
                 """)
                 cur.execute("""
@@ -292,7 +295,8 @@ def init_pg_db():
                         severity    TEXT NOT NULL DEFAULT 'none',
                         source_ip   TEXT NOT NULL DEFAULT 'unknown',
                         flow_id     TEXT NOT NULL DEFAULT '',
-                        mode        TEXT NOT NULL DEFAULT 'benchmark'
+                        mode        TEXT NOT NULL DEFAULT 'benchmark',
+                        tenant_id   TEXT NOT NULL DEFAULT 'default'
                     );
                 """)
                 cur.execute("""

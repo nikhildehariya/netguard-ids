@@ -106,14 +106,14 @@ def migrate_csv_to_sqlite() -> dict:
 
 
 def insert_detection(result: dict, source_ip: str = "unknown",
-                     flow_id: str = "", test_mode: bool = False) -> bool:
+                     flow_id: str = "", test_mode: bool = False, tenant_id: str = "default") -> bool:
     """Insert a single detection into SQLite."""
     conn = _get_db()
     try:
         conn.execute("""
             INSERT INTO detections
-                (timestamp, prediction, confidence, severity, source_ip, flow_id, mode)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+                (timestamp, prediction, confidence, severity, source_ip, flow_id, mode, tenant_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             result.get("timestamp", datetime.now(timezone.utc).isoformat()),
             result.get("prediction", "NORMAL"),
@@ -122,6 +122,7 @@ def insert_detection(result: dict, source_ip: str = "unknown",
             source_ip,
             flow_id,
             "test" if test_mode else "live",
+            tenant_id or "default",
         ))
         conn.commit()
         return True
@@ -132,38 +133,52 @@ def insert_detection(result: dict, source_ip: str = "unknown",
         conn.close()
 
 
-def load_detections(limit: int = 200, mode: str = "live") -> list[dict]:
-    """Load recent detections from SQLite."""
+def load_detections(limit: int = 200, mode: str = "live", tenant_id: str = "default") -> list[dict]:
+    """Load recent detections from SQLite with tenant isolation."""
     conn = _get_db()
     try:
-        if mode == "all":
-            rows = conn.execute("""
-                SELECT * FROM detections
-                ORDER BY timestamp DESC LIMIT ?
-            """, (limit,)).fetchall()
-        else:
-            rows = conn.execute("""
-                SELECT * FROM detections
-                WHERE mode = ?
-                ORDER BY timestamp DESC LIMIT ?
-            """, (mode, limit)).fetchall()
+        query_clauses = []
+        params = []
+        if mode != "all":
+            query_clauses.append("mode = ?")
+            params.append(mode)
+        if tenant_id and tenant_id != "*":
+            query_clauses.append("tenant_id = ?")
+            params.append(tenant_id)
+
+        where_sql = f"WHERE {' AND '.join(query_clauses)}" if query_clauses else ""
+        query = f"SELECT * FROM detections {where_sql} ORDER BY timestamp DESC LIMIT ?"
+        params.append(limit)
+
+        rows = conn.execute(query, tuple(params)).fetchall()
         return [dict(r) for r in rows]
     finally:
         conn.close()
 
 
-def get_stats() -> dict:
-    """Quick stats from SQLite."""
+def get_stats(tenant_id: str = "default") -> dict:
+    """Quick stats from SQLite filtered by tenant."""
     conn = _get_db()
     try:
-        total = conn.execute("SELECT COUNT(*) FROM detections WHERE mode='live'").fetchone()[0]
-        attacks = conn.execute(
-            "SELECT COUNT(*) FROM detections WHERE mode='live' AND severity != 'none'"
-        ).fetchone()[0]
-        by_class = conn.execute("""
-            SELECT prediction, COUNT(*) as cnt FROM detections
-            WHERE mode='live' GROUP BY prediction
-        """).fetchall()
+        if tenant_id and tenant_id != "*":
+            total = conn.execute("SELECT COUNT(*) FROM detections WHERE mode='live' AND tenant_id=?", (tenant_id,)).fetchone()[0]
+            attacks = conn.execute(
+                "SELECT COUNT(*) FROM detections WHERE mode='live' AND severity != 'none' AND tenant_id=?", (tenant_id,)
+            ).fetchone()[0]
+            by_class = conn.execute("""
+                SELECT prediction, COUNT(*) as cnt FROM detections
+                WHERE mode='live' AND tenant_id=? GROUP BY prediction
+            """, (tenant_id,)).fetchall()
+        else:
+            total = conn.execute("SELECT COUNT(*) FROM detections WHERE mode='live'").fetchone()[0]
+            attacks = conn.execute(
+                "SELECT COUNT(*) FROM detections WHERE mode='live' AND severity != 'none'"
+            ).fetchone()[0]
+            by_class = conn.execute("""
+                SELECT prediction, COUNT(*) as cnt FROM detections
+                WHERE mode='live' GROUP BY prediction
+            """).fetchall()
+
         return {
             "total":       total,
             "attacks":     attacks,

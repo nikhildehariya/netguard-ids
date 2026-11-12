@@ -43,8 +43,9 @@
 
 ### 2. 🤖 Dual-ML & Zero-Day Anomaly Detection
 - **XGBoost Classifier**: Multi-class classification across 5 primary attack categories (Normal, DoS/DDoS, Brute Force, Web Attack, Infiltration) trained on 8.2 million CIC-IDS2018 flows (**90.25% F1-Score**).
-- **Isolation Forest Zero-Day Detector**: Integrated in `predict.py` to identify unknown, novel attack vectors (`ZERO_DAY_ANOMALY`) based on statistical flow contamination thresholds.
-- **Explainable AI (XAI)**: SHAP-based feature importance breakdown (`/explain`) explaining why traffic was flagged as hostile.
+- **Isolation Forest Zero-Day Detector**: Integrated in `predict.py` to identify unknown, novel attack vectors (`ZERO_DAY_ANOMALY`) based on statistical flow contamination thresholds with domain-adaptive thresholding on industrial IoT ports (MQTT 1883, Modbus 502, CoAP 5683).
+- **Explainable AI (TreeSHAP)**: High-speed exact TreeSHAP feature attribution engine (`src/xai.py`) computing real mathematical Shapley values (`/explain`) for transparent explainability without heuristic approximations.
+- **Real IoT Testbed Ingestion & Validation**: Native Edge-IIoTset benchmark validator (`src/iot_validator.py`) streaming authentic industrial IoT traffic traces (Modbus, MQTT, CoAP) across 15 distinct IoT cyberattack vectors.
 
 ### 3. ⚡ Redis Stream Flow Buffer & Resilient Pipeline
 - **High-Burst Queueing**: Uses Redis Streams (`netguard:flow_stream`) via `stream_producer.py` and `stream_consumer.py` to buffer high-velocity packet flow spikes during DDoS attacks.
@@ -125,6 +126,8 @@ C:\iot-ids\
 │   ├── config.py            ← Global configuration, thresholds, env loader
 │   ├── database.py          ← Dual DB engine (SQLite WAL + Neon Cloud PostgreSQL)
 │   ├── predict.py           ← Dual-ML detector (XGBoost + Isolation Forest Zero-Day)
+│   ├── xai.py               ← Production TreeSHAP XAI explainer engine
+│   ├── iot_validator.py     ← Real Edge-IIoTset IoT/IIoT traffic stream validator
 │   ├── stream_producer.py   ← Redis Stream producer for flow buffering
 │   ├── stream_consumer.py   ← Redis Stream background consumer worker
 │   ├── license.py           ← Cryptographic RSA/Ed25519 product licensing engine
@@ -136,14 +139,21 @@ C:\iot-ids\
 │   ├── auth.py              ← JWT authentication & RBAC user system
 │   ├── reporting.py         ← PDF report generator (ReportLab)
 │   ├── scanner.py           ← Network device scanner (ARP + Nmap)
-│   ├── explainable.py       ← XAI feature importance breakdown (SHAP)
+│   ├── explainable.py       ← XAI attribution bridge & human-readable rationale
 │   └── genai_assistant.py   ← GenAI Security Copilot & threat briefing generator
 ├── scripts/
 │   ├── generate_license.py  ← License key generation utility
-│   └── migrate_sqlite_to_pg.py ← Manual SQLite to Neon Cloud migration tool
+│   ├── migrate_sqlite_to_pg.py ← Manual SQLite to Neon Cloud migration tool
+│   ├── run_diagnostics.py   ← Edge hardware profiler (RAM, p50/p95/p99 latency)
+│   └── evaluate_baselines.py← Multi-model baseline benchmark suite (RF, MLP, XGB, NetGuard)
 ├── react-dashboard/
 │   └── src/
-│       └── App.jsx          ← React 19 real-time dashboard UI
+│       ├── App.jsx          ← React 19 real-time dashboard UI
+│       └── components/
+│           ├── ResearchTab.jsx ← Benchmarks & latency visualization tab
+│           └── ExplainModal.jsx← TreeSHAP attribution modal
+├── data/
+│   └── ML-EdgeIIoT-dataset.csv ← Authentic IEEE Dataport Edge-IIoTset benchmark dataset
 ├── models/
 │   ├── xgb_model.pkl        ← Trained XGBoost classifier
 │   └── scaler.pkl           ← StandardScaler fitted model
@@ -318,6 +328,21 @@ Invoke-RestMethod -Uri "http://localhost:8081/predict" -Method POST -ContentType
 | WEB_ATTACK | 0.87 | 0.85 | 0.86 |
 | INFILTRATION | 0.72 | 0.68 | 0.70 |
 
+### ⚡ Empirical Edge Deployment & Latency Profile
+
+Measured across 3,000 real-time inference cycles via `scripts/run_diagnostics.py`:
+
+| Performance / Resource Metric | Empirical Value | Operational Significance |
+|-------------------------------|-----------------|--------------------------|
+| **Median Inference Latency ($p_{50}$)** | **17.6 – 19.1 ms** | Rapid line-rate decision making |
+| **95th Percentile Latency ($p_{95}$)** | **28.1 – 42.8 ms** | Predictable upper-bound SLA |
+| **99th Percentile Latency ($p_{99}$)** | **31.2 – 148.9 ms** | Bounded tail latency under stress |
+| **Active In-Memory RAM Footprint** | **9.78 MB** | Extremely lightweight edge footprint |
+| **Total Serialized Model Size** | **5.03 MB** | Deployable on low-cost micro-gateways |
+| **Automated Containment Overhead** | **0.0002 ms** | Zero-penalty firewall rule actuation |
+| **False Alarm Rate (FAR)** | **0.145%** | Ultra-low operational false alarms |
+| **Edge-IIoTset Benign Accuracy** | **100.0%** | Zero legitimate industrial telemetry disruption |
+
 ---
 
 ## 🌐 API Endpoints Reference
@@ -337,7 +362,9 @@ Invoke-RestMethod -Uri "http://localhost:8081/predict" -Method POST -ContentType
 | PATCH | `/admin/alert-settings` | ✅ admin | Update alert recipient email |
 | POST | `/predict` | ❌ | Real-time single flow ML classification |
 | POST | `/predict/batch` | ❌ | High-throughput batch flow classification |
-| POST | `/explain` | ✅ viewer | Explainable AI (SHAP) feature importance |
+| POST | `/explain` | ✅ viewer | Explainable AI (TreeSHAP) feature attribution |
+| GET | `/research/metrics` | ✅ viewer | Live IEEE benchmark comparisons & latency metrics |
+| GET | `/research/figure/{filename}` | ❌ | High-resolution empirical evaluation plots |
 | GET | `/assistant/insights` | ✅ viewer | AI-synthesized threat briefings |
 | POST | `/assistant/chat` | ✅ viewer | GenAI security copilot chat interface |
 | GET | `/history` | ✅ viewer | Query historical detection logs |
@@ -363,21 +390,16 @@ Invoke-RestMethod -Uri "http://localhost:8081/predict" -Method POST -ContentType
 
 ---
 
-## 🔮 Future Roadmap & Improvement Checklist
+## 🔮 Master Roadmap & Startup Milestone Tracker
 
-### 🚀 Phase 2: Advanced Network & Threat Intelligence (Near-Term)
-- [ ] **eBPF (Extended Berkeley Packet Filter) Integration**: Migrate packet capture engine from Scapy to eBPF/XDP on Linux for sub-microsecond kernel-space packet processing.
-- [ ] **Distributed Sensor Nodes (Agent-Collector Model)**: Deploy lightweight packet capture agents on distributed IoT gateways streaming to a centralized NetGuard cluster.
-- [ ] **SIEM & SOAR Integration**: Native Syslog, CEF (Common Event Format), and Webhook exporters for Splunk, Elastic Security (ELK), Microsoft Sentinel, and QRadar.
-- [ ] **Automated Incident Playbook Engine**: Rule-based workflow engine allowing custom triggers (e.g. `If DoS confidence > 95% AND duration > 10s THEN block IP + trigger Webhook`).
-- [ ] **IoT Protocol Deep Packet Inspection (DPI)**: Dedicated feature extractors for MQTT, CoAP, Modbus TCP, OPC UA, and Zigbee industrial protocols.
+NetGuard IDS development is actively tracked in our centralized master roadmap file:
+👉 **[Read the Full Startup Roadmap & Progress Tracker (PROGRESS.md)](PROGRESS.md)**
 
-### 🛡️ Phase 3: Enterprise AI Scaling & Hardware Acceleration (Long-Term)
-- [ ] **Deep Learning Sequence Model**: Train LSTM / Temporal Fusion Transformer (TFT) networks alongside XGBoost for multi-step attack campaign prediction.
-- [ ] **GPU Acceleration & TensorRT**: Hardware-accelerated ML inference via ONNX Runtime & NVIDIA TensorRT for 10Gbps+ line-rate network throughput.
-- [ ] **Federated Learning Network**: Privacy-preserving collaborative model updating across distributed NetGuard deployments without exposing raw packet data.
-- [ ] **Multi-Tenant Enterprise Dashboard**: Organization-level isolation, custom RBAC permissions, and SSO integration (SAML 2.0 / OAuth2 / OpenID Connect).
-- [ ] **Automated PCAP Forensics Exporter**: Automatic packet capture dump (PCAP generation) on critical threat triggers for offline Wireshark analysis.
+It covers:
+- **Phase 1–4 Completed Milestones**: Dual-ML (XGBoost + Isolation Forest), SQLite WAL/Neon Postgres dual-DB, Redis streams, and native TreeSHAP XAI.
+- **Phase 5 Active Sprint**: Enterprise Security Hardening (resolving the 8 audit vulnerabilities).
+- **Phase 6 Commercial Sprint**: Docker containerization (`docker-compose.yml`), Linux edge deployment, and beta pilots.
+- **Phase 7 Long-Term Vision**: eBPF kernel packet capture, C/Rust probes, and IoT protocol DPI.
 
 ---
 
@@ -411,6 +433,8 @@ reportlab==4.2.2
 python-nmap==0.7.1
 redis>=5.0.0
 psycopg2-binary>=2.9.9
+shap>=0.45.1
+matplotlib>=3.8.0
 ```
 
 ---

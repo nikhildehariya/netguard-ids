@@ -12,10 +12,11 @@ LOG_COLUMNS = ["timestamp", "prediction", "confidence", "severity", "source_ip",
 
 
 def load_history(limit: int | None = None, mode: str = "live", path: str | Path | None = None,
-                 hours: float | None = None, start: str | None = None, end: str | None = None) -> pd.DataFrame:
-    """Load detections from SQLite."""
+                 hours: float | None = None, start: str | None = None, end: str | None = None,
+                 tenant_id: str = "default") -> pd.DataFrame:
+    """Load detections from SQLite with optional tenant filtering."""
     from datetime import timedelta
-    rows = load_detections(limit=50000, mode=mode)
+    rows = load_detections(limit=50000, mode=mode, tenant_id=tenant_id)
     if not rows:
         return pd.DataFrame(columns=LOG_COLUMNS)
     df = pd.DataFrame(rows)

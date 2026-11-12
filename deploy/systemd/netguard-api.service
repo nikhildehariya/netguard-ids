@@ -1,0 +1,21 @@
+[Unit]
+Description=NetGuard IDS Backend API Service
+After=network.target redis.service
+Wants=redis.service
+
+[Service]
+Type=simple
+User=netguard
+Group=netguard
+WorkingDirectory=/opt/netguard
+EnvironmentFile=/opt/netguard/.env
+ExecStart=/opt/netguard/venv/bin/uvicorn api.main:app --host 0.0.0.0 --port 8081
+Restart=always
+RestartSec=5
+# Real-time packet sniffing and firewall blocklisting capabilities
+CapabilityBoundingSet=CAP_NET_RAW CAP_NET_ADMIN
+AmbientCapabilities=CAP_NET_RAW CAP_NET_ADMIN
+LimitNOFILE=65535
+
+[Install]
+WantedBy=multi-user.target

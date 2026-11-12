@@ -60,8 +60,16 @@ export default function ExplainModal({ isOpen, onClose, record, prediction, toke
         {/* Header */}
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 20 }}>
           <div>
-            <div style={{ fontSize: 11, color: "#38bdf8", letterSpacing: "0.15em", textTransform: "uppercase", fontWeight: 700, marginBottom: 4 }}>
-              Explainable AI (XAI) Attribution
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+              <span style={{ fontSize: 11, color: "#38bdf8", letterSpacing: "0.15em", textTransform: "uppercase", fontWeight: 700 }}>
+                Explainable AI (XAI) Attribution
+              </span>
+              <span style={{
+                fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 4,
+                background: "rgba(34, 211, 160, 0.15)", color: "#22d3a0", border: "1px solid rgba(34, 211, 160, 0.3)"
+              }}>
+                ✓ TreeSHAP Engine
+              </span>
             </div>
             <div style={{ fontSize: 20, fontWeight: 700, color: isSoft ? "#0f172a" : "#f1f5f9" }}>
               Why Detected: {prediction?.prediction || data?.prediction || "Threat Event"}

@@ -18,6 +18,7 @@ logs/
 data/
 models/
 reports/
+pilot_deployments/
 *.db
 *.csv
 *.log
