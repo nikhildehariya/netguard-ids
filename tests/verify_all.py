@@ -13,6 +13,7 @@
 import sys
 import time
 from pathlib import Path
+import numpy as np
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(BASE_DIR / "src"))
@@ -123,6 +124,74 @@ try:
     )
 except Exception as e:
     log_test("SIEM Exporter", False, str(e))
+
+# --- Test 6: eBPF / XDP Kernel Capture & Line-Rate Mitigation ---
+try:
+    from ebpf_xdp import xdp_manager
+    xdp_manager.attach()
+    p_pass = xdp_manager.simulate_packet("192.168.1.100", "10.0.0.1", 50000, 80, 6, 100)
+    xdp_manager.block_ip("203.0.113.55")
+    p_drop = xdp_manager.simulate_packet("203.0.113.55", "10.0.0.1", 50000, 80, 6, 100)
+    xdp_manager.unblock_ip("203.0.113.55")
+    stats = xdp_manager.get_stats()
+    xdp_ok = (p_pass == "XDP_PASS" and p_drop == "XDP_DROP" and stats.get("packets_dropped", 0) >= 1)
+    log_test("eBPF / XDP Kernel Capture & Line-Rate Filter", xdp_ok, f"(Mode: {stats.get('driver_mode')}, Drops: {stats.get('packets_dropped')})")
+except Exception as e:
+    log_test("eBPF / XDP Kernel Capture", False, str(e))
+
+# --- Test 7: Lightweight Edge Sensor Probe Pipeline ---
+try:
+    from edge_probe import EdgeProbe
+    probe = EdgeProbe(hub_url="http://127.0.0.1:8081", tenant_id="tenant_edge_substation")
+    probe.record_packet("192.168.10.15", "10.0.0.5", 49152, 502, 6, 128, tcp_flags=24) # Modbus
+    probe.record_packet("192.168.10.15", "10.0.0.5", 49152, 502, 6, 256, tcp_flags=16)
+    ready = probe.extract_ready_flows(timeout=0.0)
+    probe_ok = (
+        len(ready) >= 1 and
+        ready[0].get("tenant_id") == "tenant_edge_substation" and
+        ready[0].get("Dst Port") == 502 and
+        ready[0].get("Tot Fwd Pkts") == 2
+    )
+    log_test("Lightweight Edge Sensor Probe Pipeline", probe_ok, f"(Dispatched {len(ready)} flows, Tenant: {ready[0].get('tenant_id')})")
+except Exception as e:
+    log_test("Lightweight Edge Sensor Probe", False, str(e))
+
+# --- Test 8: Deep Learning Sequence Modeling (Bi-LSTM + Temporal APT Correlation) ---
+try:
+    from sequence_model import apt_correlator, BiLSTMTemporalAttention
+    # Test Bi-LSTM forward calculation directly
+    lstm = BiLSTMTemporalAttention(input_dim=10, hidden_dim=16)
+    seq_data = np.random.randn(8, 10).astype(np.float32)
+    res_lstm = lstm.forward(seq_data)
+
+    # Test multi-stage sequence correlation
+    attacker_ip = "198.51.100.99"
+    # Stage 1: PortScan flow
+    flow1 = {"Dst Port": 80, "Protocol": 6, "Flow Duration": 100, "Tot Fwd Pkts": 2, "TotLen Fwd Pkts": 80, "src_ip": attacker_ip}
+    pred1 = {"prediction": "NORMAL", "confidence": 0.85, "severity": "low"}
+    c1 = apt_correlator.correlate(flow1, pred1, source_ip=attacker_ip)
+
+    # Stage 2: Brute force flow
+    flow2 = {"Dst Port": 22, "Protocol": 6, "Flow Duration": 500, "Tot Fwd Pkts": 10, "TotLen Fwd Pkts": 1200, "src_ip": attacker_ip}
+    pred2 = {"prediction": "BRUTE_FORCE", "confidence": 0.94, "severity": "high"}
+    c2 = apt_correlator.correlate(flow2, pred2, source_ip=attacker_ip)
+
+    # Stage 3: Infiltration flow
+    flow3 = {"Dst Port": 443, "Protocol": 6, "Flow Duration": 50000, "Tot Fwd Pkts": 80, "TotLen Fwd Pkts": 65000, "src_ip": attacker_ip}
+    pred3 = {"prediction": "INFILTRATION", "confidence": 0.96, "severity": "critical"}
+    c3 = apt_correlator.correlate(flow3, pred3, source_ip=attacker_ip)
+
+    seq_ok = (
+        len(res_lstm.get("attention_weights", [])) == 8 and
+        "stage" in res_lstm and
+        c3.get("sequence_depth") == 3
+    )
+    log_test("Deep Learning Sequence Modeling (Bi-LSTM APT)", seq_ok, f"(Bi-LSTM Steps: 8, Stage: {res_lstm.get('stage')}, Depth: {c3.get('sequence_depth')})")
+except Exception as e:
+    log_test("Deep Learning Sequence Modeling", False, str(e))
+
+
+
 
 
 print("\n" + "-" * 65)

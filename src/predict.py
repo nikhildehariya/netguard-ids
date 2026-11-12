@@ -90,7 +90,7 @@ class IntrusionDetector:
             final_confidence = round(confidence, 4)
             severity         = SEVERITY_MAP[xgb_label]
 
-        return {
+        res = {
             "prediction":     final_label,
             "confidence":     final_confidence,
             "severity":       severity,
@@ -103,6 +103,27 @@ class IntrusionDetector:
             },
             "timestamp": datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z"),
         }
+
+        # ── Bi-LSTM Deep Sequence Correlation for Multi-Stage APTs ──
+        try:
+            from sequence_model import apt_correlator
+            src_ip = traffic_record.get("src_ip", "127.0.0.1")
+            apt_info = apt_correlator.correlate(traffic_record, res, source_ip=src_ip)
+            if apt_info.get("is_apt_campaign"):
+                res["is_apt"] = True
+                res["campaign_id"] = apt_info.get("campaign_id")
+                res["apt_stage"] = apt_info.get("apt_stage")
+                res["apt_score"] = apt_info.get("apt_score")
+                res["temporal_attention"] = apt_info.get("temporal_attention")
+                res["severity"] = "critical"
+            else:
+                res["is_apt"] = False
+                res["apt_score"] = apt_info.get("apt_score", 0.0)
+        except Exception as e:
+            res["is_apt"] = False
+            res["apt_error"] = str(e)
+
+        return res
 
     def predict_batch(self, records: list[dict]) -> list[dict]:
         return [self.predict(r) for r in records]

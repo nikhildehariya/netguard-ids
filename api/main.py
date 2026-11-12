@@ -11,7 +11,7 @@ import hmac
 import hashlib
 from fastapi.responses import FileResponse, HTMLResponse
 from pydantic import BaseModel, Field
-from typing import Optional
+from typing import Optional, List, Dict, Any
 
 from predict import detector
 from alert import handle_alert
@@ -1203,4 +1203,83 @@ def manual_pcap_dump(request: Request, source_ip: str = "127.0.0.1", label: str 
     if pcap_path:
         return {"success": True, "pcap_path": os.path.basename(pcap_path), "message": "Forensic PCAP successfully captured"}
     return {"success": False, "message": "Packet buffer is currently empty or capture is offline"}
+
+
+# ══════════════════════════════════════════════════════════════
+# eBPF / XDP KERNEL CAPTURE ENDPOINTS (PHASE 7)
+# ══════════════════════════════════════════════════════════════
+
+class XdpBlockRequest(BaseModel):
+    ip: str
+
+@app.get("/capture/ebpf/status")
+def get_ebpf_status(request: Request):
+    """Retrieve kernel XDP capture status, 10Gbps line-rate metrics, and drop counts."""
+    require_permission(request, "view")
+    from ebpf_xdp import xdp_manager
+    return xdp_manager.get_stats()
+
+
+@app.post("/capture/ebpf/block")
+def block_ip_ebpf(req: XdpBlockRequest, request: Request):
+    """Add IP to line-rate XDP kernel drop table (zero-copy NIC drop)."""
+    require_permission(request, "block_ip")
+    from ebpf_xdp import xdp_manager
+    ok = xdp_manager.block_ip(req.ip)
+    if not ok:
+        raise HTTPException(status_code=400, detail="Invalid IPv4 address")
+    return {"success": True, "ip": req.ip, "message": "IP added to kernel XDP drop map"}
+
+
+@app.post("/capture/ebpf/unblock")
+def unblock_ip_ebpf(req: XdpBlockRequest, request: Request):
+    """Remove IP from kernel XDP drop map."""
+    require_permission(request, "unblock_ip")
+    from ebpf_xdp import xdp_manager
+    ok = xdp_manager.unblock_ip(req.ip)
+    return {"success": True, "ip": req.ip, "message": "IP removed from kernel XDP drop map"}
+
+
+# ══════════════════════════════════════════════════════════════
+# LIGHTWEIGHT EDGE SENSOR PROBE INGESTION (PHASE 7)
+# ══════════════════════════════════════════════════════════════
+
+class EdgeStreamPayload(BaseModel):
+    tenant_id: Optional[str] = "default"
+    interface: Optional[str] = "eth0"
+    flows: List[Dict[str, Any]]
+
+@app.post("/sensor/stream")
+def ingest_sensor_stream(payload: EdgeStreamPayload, request: Request):
+    """
+    Ingest real-time micro-flows streamed from C/Rust/Python edge sensor probes.
+    Validates agent secret key and performs multi-tenant ML inference.
+    """
+    secret = request.headers.get("X-Agent-Secret") or request.headers.get("Authorization", "").replace("Bearer ", "")
+    if not (secret and hmac.compare_digest(secret, AGENT_SECRET_KEY)):
+        raise HTTPException(status_code=401, detail="Unauthorized edge sensor probe")
+
+    tenant = request.headers.get("X-Tenant-ID") or payload.tenant_id or "default"
+    from predict import detector
+    from detections_db import insert_detection
+
+    processed = 0
+    anomalies = 0
+
+    for flow in payload.flows:
+        src_ip = flow.get("src_ip", "127.0.0.1")
+        pred = detector.predict(flow)
+        processed += 1
+        if pred.get("prediction") != "NORMAL":
+            anomalies += 1
+            insert_detection(pred, source_ip=src_ip, tenant_id=tenant)
+
+    return {
+        "success": True,
+        "processed_flows": processed,
+        "anomalies_detected": anomalies,
+        "tenant_id": tenant
+    }
+
+
 
