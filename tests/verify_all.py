@@ -190,6 +190,94 @@ try:
 except Exception as e:
     log_test("Deep Learning Sequence Modeling", False, str(e))
 
+# --- Test 9: Real-Time Threat Intelligence (TI) Ingestion Engine ---
+try:
+    from threat_intel import threat_intel
+    ti_c2 = threat_intel.lookup_ip("198.51.100.1")
+    threat_intel.add_custom_ioc("203.0.113.99", "APT29 C2 Node", score=0.99)
+    ti_custom = threat_intel.lookup_ip("203.0.113.99")
+    ti_ok = (
+        ti_c2.get("is_malicious") is True and
+        "Cobalt Strike" in ti_c2.get("actor", "") and
+        ti_custom.get("is_malicious") is True and
+        ti_custom.get("actor") == "APT29 C2 Node"
+    )
+    log_test("Real-Time Threat Intelligence Engine", ti_ok, f"(C2 Actor: {ti_c2.get('actor')}, Custom IOC: {ti_custom.get('actor')})")
+except Exception as e:
+    log_test("Real-Time Threat Intelligence Engine", False, str(e))
+
+# --- Test 10: Multi-Dataset Continuous Retraining & Active Learning ---
+try:
+    from retrain_pipeline import active_learning, drift_detector, retrain_pipeline
+    fb = active_learning.submit_feedback(
+        flow_features={"Dst Port": 1883, "Tot Fwd Pkts": 6},
+        original_prediction="NORMAL",
+        analyst_label="MQTT_UNAUTHORIZED_PUBLISH",
+        source_ip="192.168.1.88",
+        reported_by="soc_analyst"
+    )
+    cycle = retrain_pipeline.run_retrain_cycle()
+    retrain_ok = (
+        fb.get("success") is True and
+        cycle.get("status") == "completed" and
+        cycle.get("macro_f1_target", 0) > 0.90
+    )
+    log_test("Continuous Retraining & Active Learning Pipeline", retrain_ok, f"(Status: {cycle.get('status')}, F1 Target: {cycle.get('macro_f1_target')})")
+except Exception as e:
+    log_test("Continuous Retraining Pipeline", False, str(e))
+
+# --- Test 11: Distributed Edge Fleet Orchestration ---
+try:
+    from fleet_manager import fleet_manager
+    reg = fleet_manager.register_probe("probe-substation-99", "substation-gw-99", tenant_id="tenant_substation_beta")
+    hb = fleet_manager.record_heartbeat("probe-substation-99", packets_seen=2500, flows_streamed=80)
+    overview = fleet_manager.get_fleet_overview(tenant_id="tenant_substation_beta")
+    fleet_ok = (
+        reg.get("success") is True and
+        hb.get("success") is True and
+        overview.get("online_probes") >= 1 and
+        overview.get("fleet_total_packets") >= 2500
+    )
+    log_test("Distributed Edge Fleet Orchestration", fleet_ok, f"(Online Probes: {overview.get('online_probes')}, Pkts: {overview.get('fleet_total_packets')})")
+except Exception as e:
+    log_test("Distributed Fleet Orchestration", False, str(e))
+
+# --- Test 12: Enterprise SOAR Switch & VLAN Quarantine ---
+try:
+    from switch_soar import switch_soar
+    q1 = switch_soar.quarantine_endpoint("10.50.1.99", switch_vendor="cisco", vlan_id=666)
+    q2 = switch_soar.quarantine_endpoint("10.50.1.100", mac_addr="00:11:22:33:44:55", switch_vendor="radius_802_1x", vlan_id=666)
+    active_q = switch_soar.list_quarantined_endpoints()
+    rel = switch_soar.release_endpoint("10.50.1.99")
+    soar_ok = (
+        q1.get("success") is True and
+        q2.get("success") is True and
+        rel.get("success") is True and
+        len(active_q) >= 1
+    )
+    log_test("Enterprise SOAR Switch & VLAN Quarantine", soar_ok, f"(Cisco & 802.1X VLAN 666 Enforced, Active: {len(active_q)})")
+except Exception as e:
+    log_test("Enterprise SOAR Switch Quarantine", False, str(e))
+
+# --- Test 13: Turnkey Packaging & Virtual Appliance Delivery ---
+try:
+    win_installer = BASE_DIR / "deploy" / "windows" / "install-service.ps1"
+    appliance_init = BASE_DIR / "deploy" / "appliance" / "setup-appliance.sh"
+    pack_ok = (
+        win_installer.exists() and
+        win_installer.stat().st_size > 500 and
+        appliance_init.exists() and
+        appliance_init.stat().st_size > 500
+    )
+    log_test("Turnkey Packaging & Appliance Config", pack_ok, "(Windows Service Installer & VMware/Proxmox Appliance verified)")
+except Exception as e:
+    log_test("Turnkey Packaging & Appliance Config", False, str(e))
+
+
+
+
+
+
 
 
 

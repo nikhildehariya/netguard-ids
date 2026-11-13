@@ -123,6 +123,24 @@ class IntrusionDetector:
             res["is_apt"] = False
             res["apt_error"] = str(e)
 
+        # ── Threat Intelligence (TI) Reputation Correlation ──
+        try:
+            from threat_intel import threat_intel
+            check_ip = traffic_record.get("dst_ip") or traffic_record.get("Dst IP") or traffic_record.get("src_ip")
+            if check_ip:
+                ti_info = threat_intel.lookup_ip(str(check_ip))
+                if ti_info.get("is_malicious"):
+                    res["threat_intel"] = ti_info
+                    if res["prediction"] == "NORMAL":
+                        res["prediction"] = "C2_COMMUNICATION"
+                        res["confidence"] = max(res["confidence"], ti_info.get("reputation_score", 0.95))
+                        res["severity"] = "critical"
+                    else:
+                        res["confidence"] = max(res["confidence"], 0.95)
+                        res["severity"] = "critical"
+        except Exception as e:
+            res["threat_intel_error"] = str(e)
+
         return res
 
     def predict_batch(self, records: list[dict]) -> list[dict]:

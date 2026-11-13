@@ -1282,4 +1282,209 @@ def ingest_sensor_stream(payload: EdgeStreamPayload, request: Request):
     }
 
 
+# ══════════════════════════════════════════════════════════════
+# REAL-TIME THREAT INTELLIGENCE (TI) ENDPOINTS (PHASE 8)
+# ══════════════════════════════════════════════════════════════
+
+class CustomIocRequest(BaseModel):
+    ip: str
+    actor: str
+    score: Optional[float] = 0.95
+    category: Optional[str] = "custom_c2"
+
+@app.get("/threat-intel/lookup/{ip}")
+def lookup_threat_intel(ip: str, request: Request):
+    """Query real-time threat intelligence reputation for an IP."""
+    require_permission(request, "view")
+    from threat_intel import threat_intel
+    return threat_intel.lookup_ip(ip)
+
+@app.get("/threat-intel/status")
+def threat_intel_status(request: Request):
+    """Retrieve threat intelligence feed status, cache hit rates, and metrics."""
+    require_permission(request, "view")
+    from threat_intel import threat_intel
+    return threat_intel.get_metrics()
+
+@app.post("/threat-intel/feed/custom")
+def add_custom_ioc_entry(req: CustomIocRequest, request: Request):
+    """Add a verified IOC / C2 node to the active threat intelligence engine."""
+    require_permission(request, "manage_users")
+    from threat_intel import threat_intel
+    threat_intel.add_custom_ioc(req.ip, req.actor, score=req.score or 0.95, category=req.category or "custom_c2")
+    return {"success": True, "ip": req.ip, "actor": req.actor, "message": "Custom IOC registered in threat intelligence feed"}
+
+
+# ══════════════════════════════════════════════════════════════
+# CONTINUOUS RETRAINING & ACTIVE LEARNING ENDPOINTS (PHASE 8)
+# ══════════════════════════════════════════════════════════════
+
+class ActiveLearningFeedbackRequest(BaseModel):
+    flow_features: Dict[str, Any]
+    original_prediction: str
+    analyst_label: str
+    source_ip: Optional[str] = "unknown"
+
+@app.post("/retrain/feedback")
+def submit_active_learning_feedback(req: ActiveLearningFeedbackRequest, request: Request):
+    """Submit an analyst correction/false positive for automated retraining."""
+    require_permission(request, "report")
+    actor = get_actor(request)
+    from retrain_pipeline import active_learning
+    return active_learning.submit_feedback(
+        flow_features=req.flow_features,
+        original_prediction=req.original_prediction,
+        analyst_label=req.analyst_label,
+        source_ip=req.source_ip or "unknown",
+        reported_by=actor
+    )
+
+@app.get("/retrain/feedback")
+def list_active_learning_feedback(request: Request, limit: int = 50):
+    """List pending analyst-corrected samples queued for retraining."""
+    require_permission(request, "view")
+    from retrain_pipeline import active_learning
+    return {
+        "pending_samples": active_learning.get_pending_samples(limit=limit),
+        "counts": active_learning.count_samples()
+    }
+
+@app.get("/retrain/drift-check")
+def check_concept_drift(request: Request):
+    """Run Kolmogorov-Smirnov test comparing live traffic distributions to baseline."""
+    require_permission(request, "view")
+    from retrain_pipeline import drift_detector
+    from reporting import load_history
+    recent = load_history(limit=100, mode="live")
+    live_features = {}
+    if not recent.empty:
+        for feat in ["Flow Duration", "Tot Fwd Pkts", "TotLen Fwd Pkts"]:
+            if feat in recent.columns:
+                live_features[feat] = recent[feat].dropna().tolist()
+    return drift_detector.evaluate_drift(live_features)
+
+@app.post("/retrain/trigger")
+def trigger_retraining_cycle(request: Request):
+    """Trigger incremental continuous retraining cycle merging active learning queue."""
+    require_permission(request, "manage_users")
+    from retrain_pipeline import retrain_pipeline
+    return retrain_pipeline.run_retrain_cycle()
+
+
+# ══════════════════════════════════════════════════════════════
+# DISTRIBUTED FLEET ORCHESTRATION ENDPOINTS (PHASE 8)
+# ══════════════════════════════════════════════════════════════
+
+class ProbeRegisterRequest(BaseModel):
+    probe_id: str
+    hostname: str
+    tenant_id: Optional[str] = "default"
+    ip_address: Optional[str] = "unknown"
+    version: Optional[str] = "3.5.0-edge"
+    interface: Optional[str] = "eth0"
+
+class ProbeHeartbeatRequest(BaseModel):
+    probe_id: str
+    packets_seen: Optional[int] = 0
+    flows_streamed: Optional[int] = 0
+    cpu_usage_pct: Optional[float] = 0.0
+    ram_usage_mb: Optional[float] = 0.0
+
+class FleetRuleRequest(BaseModel):
+    tenant_id: str
+    rule: Dict[str, Any]
+
+@app.post("/fleet/register")
+def register_fleet_probe(req: ProbeRegisterRequest, request: Request):
+    """Register an edge sensor probe with central NetGuard hub."""
+    require_permission(request, "capture")
+    from fleet_manager import fleet_manager
+    return fleet_manager.register_probe(
+        probe_id=req.probe_id,
+        hostname=req.hostname,
+        tenant_id=req.tenant_id or "default",
+        ip_address=req.ip_address or "unknown",
+        version=req.version or "3.5.0-edge",
+        interface=req.interface or "eth0"
+    )
+
+@app.post("/fleet/heartbeat")
+def probe_heartbeat(req: ProbeHeartbeatRequest, request: Request):
+    """Receive probe telemetry heartbeat and return active policy rules."""
+    from fleet_manager import fleet_manager
+    return fleet_manager.record_heartbeat(
+        probe_id=req.probe_id,
+        packets_seen=req.packets_seen or 0,
+        flows_streamed=req.flows_streamed or 0,
+        cpu_usage_pct=req.cpu_usage_pct or 0.0,
+        ram_usage_mb=req.ram_usage_mb or 0.0
+    )
+
+@app.get("/fleet/probes")
+def get_fleet_probes(request: Request, tenant_id: Optional[str] = None):
+    """List all connected fleet sensor probes, health status, and throughput."""
+    payload = require_permission(request, "view")
+    tenant = tenant_id or (payload.get("tenant_id") if payload else None)
+    if tenant == "default":
+        tenant = None
+    from fleet_manager import fleet_manager
+    return fleet_manager.get_fleet_overview(tenant_id=tenant)
+
+@app.post("/fleet/rules")
+def push_fleet_rule(req: FleetRuleRequest, request: Request):
+    """Broadcast a dynamic DPI or firewall policy to edge sensor fleet."""
+    require_permission(request, "manage_users")
+    from fleet_manager import fleet_manager
+    return fleet_manager.push_tenant_rule(req.tenant_id, req.rule)
+
+
+# ══════════════════════════════════════════════════════════════
+# ENTERPRISE SOAR SWITCH & VLAN QUARANTINE ENDPOINTS (PHASE 8)
+# ══════════════════════════════════════════════════════════════
+
+class SoarQuarantineRequest(BaseModel):
+    ip: str
+    mac: Optional[str] = ""
+    switch_vendor: Optional[str] = "cisco"
+    vlan_id: Optional[int] = 666
+    reason: Optional[str] = "Automated NetGuard Threat Mitigation"
+
+class SoarReleaseRequest(BaseModel):
+    ip: str
+
+@app.post("/soar/quarantine")
+def isolate_endpoint_switch(req: SoarQuarantineRequest, request: Request):
+    """Isolate an infected endpoint via switch ACL or dynamic 802.1X Quarantine VLAN."""
+    require_permission(request, "block_ip")
+    actor = get_actor(request)
+    from switch_soar import switch_soar
+    return switch_soar.quarantine_endpoint(
+        ip_str=req.ip,
+        mac_addr=req.mac or "",
+        switch_vendor=req.switch_vendor or "cisco",
+        vlan_id=req.vlan_id or 666,
+        reason=req.reason or "Automated NetGuard Threat Mitigation",
+        actor=actor
+    )
+
+@app.post("/soar/unquarantine")
+def release_endpoint_switch(req: SoarReleaseRequest, request: Request):
+    """Release an endpoint from switch quarantine and restore default VLAN connectivity."""
+    require_permission(request, "unblock_ip")
+    actor = get_actor(request)
+    from switch_soar import switch_soar
+    return switch_soar.release_endpoint(ip_str=req.ip, actor=actor)
+
+@app.get("/soar/quarantined")
+def get_quarantined_endpoints(request: Request):
+    """List all currently isolated switch ports and quarantine VLAN assignments."""
+    require_permission(request, "view")
+    from switch_soar import switch_soar
+    return {"quarantined_endpoints": switch_soar.list_quarantined_endpoints()}
+
+
+
+
+
+
 
