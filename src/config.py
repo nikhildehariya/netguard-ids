@@ -52,12 +52,21 @@ NUM_CLASSES  = len(CLASS_NAMES)
 
 SEVERITY_MAP = {
     "NORMAL":           "none",
+    "BENIGN":           "none",
     "BRUTE_FORCE":      "high",
     "DOS_DDOS":         "critical",
     "WEB_ATTACK":       "high",
     "INFILTRATION":     "critical",
     "ZERO_DAY_ANOMALY": "critical",
+    "C2_COMMUNICATION": "critical",
+    "MODBUS_INJECTION": "critical",
+    "MIRAI_BOTNET":     "critical",
+    "BOTNET":           "critical",
 }
+
+def get_severity(label: str) -> str:
+    """Safe severity lookup for any prediction label with sane attack fallback."""
+    return SEVERITY_MAP.get(str(label).upper(), "high" if str(label).upper() not in ("NORMAL", "BENIGN") else "none")
 
 SEVERITY_COLOR = {
     "none":     "green",

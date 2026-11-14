@@ -87,6 +87,7 @@ def is_capture_running_systemwide() -> bool:
     lock_path = Path(__file__).resolve().parent.parent / "logs" / "capture.lock"
     if not lock_path.exists():
         return False
+    f = None
     try:
         f = open(lock_path, "a+")
         if sys.platform == "win32":
@@ -97,10 +98,15 @@ def is_capture_running_systemwide() -> bool:
             import fcntl
             fcntl.flock(f.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
             fcntl.flock(f.fileno(), fcntl.LOCK_UN)
-        f.close()
         return False
     except (IOError, OSError):
         return True
+    finally:
+        if f is not None:
+            try:
+                f.close()
+            except Exception:
+                pass
 
 
 def auto_start_live_capture():

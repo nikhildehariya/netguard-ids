@@ -23,12 +23,14 @@ CREATE TABLE IF NOT EXISTS detections (
     severity    TEXT NOT NULL DEFAULT 'none',
     source_ip   TEXT NOT NULL DEFAULT 'unknown',
     flow_id     TEXT NOT NULL DEFAULT '',
-    mode        TEXT NOT NULL DEFAULT 'live'
+    mode        TEXT NOT NULL DEFAULT 'live',
+    tenant_id   TEXT NOT NULL DEFAULT 'default'
 );
 CREATE INDEX IF NOT EXISTS idx_det_ts         ON detections(timestamp);
 CREATE INDEX IF NOT EXISTS idx_det_prediction ON detections(prediction);
 CREATE INDEX IF NOT EXISTS idx_det_source_ip  ON detections(source_ip);
 CREATE INDEX IF NOT EXISTS idx_det_severity   ON detections(severity);
+CREATE INDEX IF NOT EXISTS idx_det_tenant     ON detections(tenant_id);
 """
 
 def _get_db() -> sqlite3.Connection:
@@ -36,6 +38,12 @@ def _get_db() -> sqlite3.Connection:
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
     conn.executescript(_SCHEMA)
+    # Defensive auto-migration if an older DB exists without tenant_id
+    try:
+        conn.execute("ALTER TABLE detections ADD COLUMN tenant_id TEXT NOT NULL DEFAULT 'default'")
+        conn.commit()
+    except sqlite3.OperationalError:
+        pass  # Column already exists
     return conn
 
 

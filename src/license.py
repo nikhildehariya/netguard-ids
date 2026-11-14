@@ -5,6 +5,7 @@ Supports RSA and Ed25519 signed license key validation with expiration dates,
 """
 
 import os
+import sys
 import json
 import uuid
 import time
@@ -16,6 +17,8 @@ from enum import Enum
 from pathlib import Path
 from typing import Optional, List, Dict, Any, Tuple
 from dataclasses import dataclass, field, asdict
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from cryptography.hazmat.primitives.asymmetric import ed25519, rsa, padding
 from cryptography.hazmat.primitives import hashes, serialization

@@ -1,9 +1,11 @@
 from datetime import datetime
+import sys
 import csv
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import pandas as pd
-
-from pathlib import Path
 
 from config import ALERT_CONFIDENCE_THRESHOLD, LOG_PATH, REPORTS_DIR
 from detections_db import migrate_csv_to_sqlite, load_detections

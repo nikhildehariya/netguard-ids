@@ -2,6 +2,10 @@
 NetGuard IDS — Authentication System
 Industry-grade JWT auth with roles, bcrypt/pbkdf2, rate limiting (PostgreSQL backed)
 """
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
 import secrets
 import hashlib
 import hmac

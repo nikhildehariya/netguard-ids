@@ -2,18 +2,25 @@ import React from "react";
 
 export const COLORS = {
   NORMAL: "#22d3a0",
+  BENIGN: "#22d3a0",
   BRUTE_FORCE: "#f97316",
   DOS_DDOS: "#ef4444",
   WEB_ATTACK: "#a78bfa",
   INFILTRATION: "#ec4899",
+  ZERO_DAY_ANOMALY: "#fbbf24",
+  C2_COMMUNICATION: "#e11d48",
+  MODBUS_INJECTION: "#d946ef",
+  MIRAI_BOTNET: "#f97316",
+  BOTNET: "#f97316",
 };
 
 export const SEV_COLOR = { none: "#22d3a0", high: "#f97316", critical: "#ef4444" };
 
-export function Pill({ children, color = "#22d3a0" }) {
+export function Pill({ children, color }) {
+  const safeColor = color || "#22d3a0";
   return (
     <span style={{
-      background: color + "22", color, border: `1px solid ${color}44`,
+      background: safeColor + "22", color: safeColor, border: `1px solid ${safeColor}44`,
       borderRadius: 4, padding: "2px 8px", fontSize: 11, fontWeight: 600,
       letterSpacing: "0.06em", textTransform: "uppercase", fontFamily: "monospace"
     }}>{children}</span>

@@ -4,10 +4,13 @@
 # =============================================================
 
 import os
+import sys
 import re
 import sqlite3
 from pathlib import Path
 from typing import Optional, Any, Dict, List
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 try:
     import psycopg2
