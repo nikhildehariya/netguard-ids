@@ -120,6 +120,19 @@ Frontend visibility, telemetry alignment, and legacy string sanitization identif
 
 ---
 
+### E. Codebase Resilience & Core Bug Audit (Active Sprint — Completed)
+Deep line-by-line inspection of all backend modules, database schemas, and frontend rendering logic:
+
+| Priority | Bug & File Location | Root Cause & Failure Mode | Permanent Resolution | Verification Status |
+| :---: | :--- | :--- | :--- | :---: |
+| 🚨 **HIGH** | **Fresh DB Schema Missing `tenant_id`**<br>`src/detections_db.py` | `_SCHEMA` did not define `tenant_id` column; fresh installations crash on `insert_detection()`. | Added `tenant_id TEXT NOT NULL DEFAULT 'default'` & index to `_SCHEMA` + defensive auto-migration in `_get_db()`. | ✅ **VERIFIED** (In-memory fresh DB + live insert test passed) |
+| 🚨 **HIGH** | **Standalone Import Crash (`config`)**<br>`database.py`, `auth.py`, `blocklist.py`, `license.py`, `reporting.py` | Missing `sys.path.insert(0, ...)` caused `ModuleNotFoundError: No module named 'config'` on external import. | Added directory-relative `sys.path.insert(0, ...)` to all 5 backend modules. | ✅ **VERIFIED** (All 5 modules import cleanly in standalone mode) |
+| ⚡ **MEDIUM** | **Unmapped Threats in `SEVERITY_MAP`**<br>`src/config.py` | Missing `C2_COMMUNICATION`, `ZERO_DAY_ANOMALY`, and IoT attack keys caused potential `KeyError`/`None` severity. | Added full threat label coverage and safe `get_severity(label)` fallback function. | ✅ **VERIFIED** (11/11 attack labels mapped and validated) |
+| ⚡ **MEDIUM** | **Broken UI Pill CSS on Edge Classes**<br>`react-dashboard/src/components/Common.jsx` | Missing threat keys in `COLORS` caused `color` to be `undefined`, rendering invalid CSS `background: "undefined22"`. | Added full threat label colors (`C2_COMMUNICATION`, `ZERO_DAY_ANOMALY`, etc.) + `safeColor` fallback in `Pill`. | ✅ **VERIFIED** (`npm run build` passed in 1.03s, 0 errors) |
+| ℹ️ **LOW** | **File Descriptor Leak in Sniffer Check**<br>`api/main.py` | `f = open(...)` in `is_capture_running_systemwide()` leaked handles when `msvcrt.locking` threw `OSError`. | Refactored with `finally:` block ensuring `f.close()` is guaranteed on all code paths. | ✅ **VERIFIED** (100 sequential calls executed with 0 leaked handles) |
+
+---
+
 ## 📦 3. Phase 3: Commercial Packaging & Startup Launch Sprint (Q4 2026 - Q1 2027)
 
 To transform NetGuard from a local workstation project into an installable product:
