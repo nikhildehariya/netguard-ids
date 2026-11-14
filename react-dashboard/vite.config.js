@@ -26,6 +26,11 @@ export default defineConfig({
       '/assistant': 'http://127.0.0.1:8081',
       '/explain': 'http://127.0.0.1:8081',
       '/health': 'http://127.0.0.1:8081',
+      '/threat-intel': 'http://127.0.0.1:8081',
+      '/fleet': 'http://127.0.0.1:8081',
+      '/soar': 'http://127.0.0.1:8081',
+      '/retrain': 'http://127.0.0.1:8081',
+      '/sensor': 'http://127.0.0.1:8081',
       '/ws': {
         target: 'ws://127.0.0.1:8081',
         ws: true

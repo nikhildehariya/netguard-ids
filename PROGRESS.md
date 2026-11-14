@@ -105,6 +105,21 @@ Operational, UI state, and multi-tenancy edge-case factors identified during lin
 
 ---
 
+### D. Enterprise UI Integration & Production Polish Audit (Active Sprint)
+Frontend visibility, telemetry alignment, and legacy string sanitization identified during production diagnosis:
+
+| Priority | Item & Location | Risk Description | Remediation Plan | Status |
+| :---: | :--- | :--- | :--- | :---: |
+| ⚡ **MEDIUM** | **Automated Incident PCAP Download UI**<br>`IncidentsTab.jsx` & `/forensics/` | Rolling PCAP captures are generated on critical alerts, but SOC operators have no UI button to download `.pcap` files directly from incidents. | Add a direct "Download PCAP" action link on high/critical incident rows calling `/forensics/download/{filename}`. | ✅ **RESOLVED** |
+| ⚡ **MEDIUM** | **Threat Intelligence C2 Badging**<br>`IncidentsTab.jsx` & `/threat-intel/` | Backend identifies malicious C2 IPs, but the incident rows do not visually badge the threat actor (e.g. Cobalt Strike). | Render Threat Intelligence badges (`[C2: Actor]`) next to flagged source/destination IPs in the UI. | ✅ **RESOLVED** |
+| ⚡ **MEDIUM** | **Active Learning Feedback Action**<br>`IncidentsTab.jsx` & `/retrain/` | Analysts have no in-dashboard mechanism to flag false positives or submit label corrections to `/retrain/feedback`. | Add a "Flag False Positive / Retrain" button on incident rows to submit edge samples directly to the retraining queue. | ✅ **RESOLVED** |
+| ℹ️ **LOW** | **eBPF/XDP Line-Rate Metric Visibility**<br>`CaptureTab.jsx` & `/capture/ebpf/status` | Capture tab only displays user-space Scapy status without showing eBPF/XDP kernel driver acceleration and drop counters. | Add an "⚡ eBPF/XDP Hardware Acceleration" status card and line-rate drop counter to Capture tab. | ✅ **RESOLVED** |
+| ℹ️ **LOW** | **Legacy Academic String in Production**<br>`CaptureTab.jsx:62` | Comment/warning contains `"at college"` academic placeholder. | Sanitize warning text to read: `"SPAN interface GUID not configured. Set SPAN_GUID in configuration."` | ✅ **RESOLVED** |
+| ℹ️ **LOW** | **Outdated UI & API Version Labels**<br>`App.jsx:1047` & `api/main.py:55` | Dashboard sidebar displays `"IDS v2.1"` and API docs state `v2.1.0` while system is at `v4.0.0-enterprise`. | Harmonize all version labels to `v4.0.0 Enterprise`. | ✅ **RESOLVED** |
+| ℹ️ **LOW** | **Redundant Login Console Logging**<br>`api/main.py:353` | Console prints `[api/login]` debug logs on every authentication request. | Silence redundant debug print to keep production console clean. | ✅ **RESOLVED** |
+
+---
+
 ## 📦 3. Phase 3: Commercial Packaging & Startup Launch Sprint (Q4 2026 - Q1 2027)
 
 To transform NetGuard from a local workstation project into an installable product:
@@ -211,6 +226,30 @@ All 7 commercial lags eliminated with full enterprise vendor parity:
   - VMware ESXi / Proxmox VE first-boot virtual appliance setup wizard with promiscuous SPAN mirror port activation.
   - Enterprise Windows silent installer script (`deploy/windows/install-service.ps1`) bundling background services and firewall rules.
   - *Validation*: Turnkey packaging manifests and scripts verified (`tests/verify_all.py` Test 13 PASSED).
+
+---
+
+## 🔍 7. Operational Readiness Gaps & Phase 8.1 Polish Sprint (UI & Live Hardware Parity)
+
+While all backend engines, data pipelines, and REST APIs are 100% verified (`13/13 PASSED` in `tests/verify_all.py`), deep operational inspection reveals **4 practical production lags** required for turnkey customer deployment:
+
+| # | Operational Gap | Technical Root Cause | Real-World Customer Impact | Priority | Target Fix |
+| :-: | :--- | :--- | :--- | :---: | :--- |
+| **1** | **React UI Dashboard Disconnect** | Backend Phase 8 endpoints (`/threat-intel`, `/fleet`, `/soar`, `/retrain`) lack frontend UI components in `react-dashboard`. | SOC analysts cannot see connected edge probes, IP threat scores, or trigger switch quarantine from the web interface. | 🚨 **P1** | Add dedicated UI tabs: `🌐 Threat Intel`, `📡 Fleet Probes`, and add `Quarantine Switch` & `Report False Positive` action buttons to Incidents table. |
+| **2** | **Threat Intel Live Feed Credentials** | `.env` lacks `ABUSEIPDB_API_KEY` and `OTX_API_KEY`; engine relies on 6 seed malicious IPs. | Unknown live C2 and botnet IPs bypass reputation lookup unless community/enterprise API keys or offline feed DBs are configured. | ⚠️ **P2** | Populate active API keys in `.env` and bundle an offline local threat feed database (100K+ IOCs). |
+| **3** | **Physical Switch Socket Execution** | `src/switch_soar.py` generates Cisco CLI commands and Fortinet REST payloads in memory without dialing live hardware sockets. | Switch quarantine is simulated in memory; does not dynamically reassign ports on physical Cisco/Fortinet switches on LAN. | ⚠️ **P3** | Add optional live SSH adapter (Netmiko/Paramiko) and HTTPS REST client with switch IP/credentials. |
+| **4** | **Disk Serialization in Retraining Pipeline** | `RetrainingPipeline.run_retrain_cycle()` marks feedback queue samples as processed, but skips live `xgb.train()` model refit. | Model does not permanently update `models/xgb_model.pkl` on disk when active learning feedback is submitted. | ⚡ **P4** | Implement incremental XGBoost training step (`xgb.train(..., xgb_model=...)`) that overwrites `models/xgb_model.pkl` and reloads detector. |
+| **5** | **Standalone Installer Artifacts** | `deploy/windows/install-service.ps1` and `setup-appliance.sh` are setup scripts, not compiled installation binaries. | Non-technical corporate IT buyers require double-click `.msi` installers and pre-packaged `.ova` virtual appliance templates. | ⚡ **P5** | Build Inno Setup `.exe`/`.msi` single-file installer and pre-built VMware `.ova` appliance image. |
+
+### 🛠️ Phase 8.1 Immediate Action Checklist:
+- [ ] **React Dashboard Integration**:
+  - [ ] Add `📡 Fleet Probes` tab displaying remote sensor cards, online/offline indicators, CPU/RAM telemetry, and stream throughput.
+  - [ ] Add `🌐 Threat Intelligence` tab with interactive IP reputation lookup, cache hit ratios, and custom IOC registration modal.
+  - [ ] Add `⚡ Switch Quarantine (VLAN 666)` button to `IncidentsTab.jsx` for one-click dynamic switch isolation.
+  - [ ] Add `💡 Report False Positive` button to `IncidentsTab.jsx` feeding edge samples to `/retrain/feedback`.
+- [ ] **Live Threat Intel & Retraining Persistence**:
+  - [ ] Add free AbuseIPDB community API key support to `.env` + local curated offline blocklist cache.
+  - [ ] Connect `run_retrain_cycle()` to real `xgb.train()` pipeline with model backup and live memory reload.
 
 ---
 

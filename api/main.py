@@ -52,7 +52,7 @@ except ImportError:
 app = FastAPI(
     title="IoT Intrusion Detection API",
     description="Real-time IoT network traffic classifier",
-    version="2.1.0"
+    version="4.0.0"
 )
 
 ALLOWED_ORIGINS = [
@@ -350,11 +350,8 @@ def get_actor(request: Request) -> str:
 
 @app.post("/auth/login")
 def auth_login(req: LoginRequest, request: Request):
-    print(f"[api/login] Login request received for: {req.username}")
-    t0 = time.time()
     ip = request.client.host if request.client else "unknown"
     result = login(req.username, req.password, ip)
-    print(f"[api/login] Login finished in {(time.time()-t0)*1000:.1f}ms: success={result.get('success')}")
     if not result["success"]:
         status = 423 if result.get("locked") else 401
         raise HTTPException(status_code=status, detail=result["message"])

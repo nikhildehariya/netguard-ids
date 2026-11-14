@@ -126,7 +126,7 @@ function AuthScreen({ onLogin }) {
             </svg>
           </div>
           <div style={{ fontSize: 28, fontWeight: 700, color: "#f1f5f9", letterSpacing: "-0.02em" }}>NetGuard IDS</div>
-          <div style={{ fontSize: 13, color: "#475569", marginTop: 6, letterSpacing: "0.02em" }}>IoT Intrusion Detection System v2.1</div>
+          <div style={{ fontSize: 13, color: "#475569", marginTop: 6, letterSpacing: "0.02em" }}>Enterprise IoT/OT Intrusion Detection System v4.0</div>
         </div>
 
         {/* Card */}
@@ -217,9 +217,9 @@ export default function App() {
   const [selectedIface, setSelectedIface] = useState("");
   const [captureMode, setCaptureMode] = useState("wifi"); // "wifi" | "span" | "manual"
 
-  // Pre-configured interfaces — update SPAN_GUID when you get it from college
+  // Pre-configured network interfaces
   const WIFI_GUID = "\\Device\\NPF_{0F823FF5-FB72-48B3-B29B-6BC2C635ED21}";
-  const SPAN_GUID = "\\Device\\NPF_{9500E94C-87BD-4320-BD21-1D31761B841F}"; // ← replace this at college
+  const SPAN_GUID = "\\Device\\NPF_{9500E94C-87BD-4320-BD21-1D31761B841F}"; // Default SPAN port GUID
   const [captureRunning, setCaptureRunning] = useState(false);
   const [captureLog, setCaptureLog] = useState("");
   const [blockedIPs, setBlockedIPs] = useState([]);
@@ -1044,7 +1044,7 @@ select { color-scheme: dark; } select.dark-input { background: #0a1628 !importan
             </div>
             <div>
               <div style={{ fontSize: 14, fontWeight: 700, color: "#f1f5f9", letterSpacing: "-0.01em" }}>NetGuard</div>
-              <div style={{ fontSize: 10, color: "#475569", letterSpacing: "0.08em" }}>IDS v2.1</div>
+              <div style={{ fontSize: 10, color: "#475569", letterSpacing: "0.08em" }}>IDS v4.0 Enterprise</div>
             </div>
           </div>
         </div>
@@ -1173,6 +1173,7 @@ select { color-scheme: dark; } select.dark-input { background: #0a1628 !importan
             captureLog={captureLog}
             stats={stats}
             attacks={attacks}
+            API={API}
           />
         )}
         {activeTab === "incidents" && (
