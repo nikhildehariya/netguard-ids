@@ -67,8 +67,14 @@ class IntrusionDetector:
                 
                 # Domain-Adaptive Thresholding:
                 # IoT specific ports (MQTT:1883, Modbus:502, CoAP:5683) or extreme packet bursts
-                dst_port = float(traffic_record.get("Dst Port", 0))
-                flow_pkts_s = float(traffic_record.get("Flow Pkts/s", 0))
+                try:
+                    dst_port = float(traffic_record.get("Dst Port", 0))
+                except (ValueError, TypeError):
+                    dst_port = 0.0
+                try:
+                    flow_pkts_s = float(traffic_record.get("Flow Pkts/s", 0))
+                except (ValueError, TypeError):
+                    flow_pkts_s = 0.0
                 is_iot_port = dst_port in [1883, 502, 5683, 8883, 4840]
                 
                 # Adaptive threshold: 0.55 on IoT vectors / high burst, 0.65 on standard traffic

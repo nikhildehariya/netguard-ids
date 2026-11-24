@@ -107,13 +107,19 @@ except Exception as e:
 try:
     from webhook_exporters import export_to_syslog
     import socket
-    # Mock loopback listener
+    # Mock loopback listener with reuse address
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    s.bind(('127.0.0.1', 19514))
-    s.settimeout(1.0)
+    try:
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    except Exception:
+        pass
+    # Bind to ephemeral port
+    s.bind(('127.0.0.1', 0))
+    test_port = s.getsockname()[1]
+    s.settimeout(2.0)
 
     test_ev = {'prediction': 'SQL_INJECTION', 'confidence': 0.96, 'severity': 'critical', 'tenant_id': 'poc_bank'}
-    export_to_syslog(test_ev, '172.16.0.4', host='127.0.0.1', port=19514)
+    export_to_syslog(test_ev, '172.16.0.4', host='127.0.0.1', port=test_port)
     data, _ = s.recvfrom(2048)
     s.close()
     syslog_msg = data.decode('utf-8')

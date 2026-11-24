@@ -1,5 +1,3 @@
-import React from "react";
-
 export const COLORS = {
   NORMAL: "#22d3a0",
   BENIGN: "#22d3a0",

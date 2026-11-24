@@ -1,4 +1,4 @@
-# run-netguard.ps1
+﻿# run-netguard.ps1
 # Unified launcher for NetGuard IDS v2.1
 
 $ErrorActionPreference = "Stop"
@@ -63,7 +63,7 @@ if ($FrontendRunning) {
     Write-Host "[5] Clearing stale processes on port 5174 & starting React dashboard..." -ForegroundColor Yellow
     Get-NetTCPConnection -LocalPort 5174 -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }
     Push-Location react-dashboard
-    $FrontendProcess = Start-Process -FilePath ".\node_modules\.bin\vite.cmd" -ArgumentList "--host 127.0.0.1 --port 5174" -PassThru -NoNewWindow
+    $FrontendProcess = Start-Process -FilePath ".\node_modules\.bin\vite.cmd" -ArgumentList "--host 0.0.0.0 --port 5174" -PassThru -NoNewWindow
     Pop-Location
 }
 

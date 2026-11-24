@@ -1,6 +1,6 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useCallback } from "react";
 
-import { COLORS, SEV_COLOR, Pill, StatCard, SectionTitle, Divider } from "./components/Common";
+import { COLORS } from "./components/Common";
 import OverviewTab from "./components/OverviewTab";
 import CaptureTab, { RadarPulse } from "./components/CaptureTab";
 import IncidentsTab from "./components/IncidentsTab";
@@ -40,10 +40,8 @@ export const TokenStore = {
 };
 
 const ROLE_COLORS = { admin: "#ef4444", analyst: "#f97316", viewer: "#22d3a0" };
-const ROLE_BADGES = { admin: "🛡️ Admin", analyst: "🔍 Analyst", viewer: "👁️ Viewer" };
 
 function AuthScreen({ onLogin }) {
-  const [mode, setMode] = useState("login"); // "login"
   const [form, setForm] = useState({ username: "", email: "", password: "", confirmPassword: "" });
   const [err, setErr] = useState("");
   const [loading, setLoading] = useState(false);
@@ -210,6 +208,9 @@ function LoginScreen({ onLogin }) { return <AuthScreen onLogin={onLogin} />; }
 export default function App() {
   const [auth, setAuth] = useState(false);
   const [currentUser, setCurrentUser] = useState(null);
+  const [selectedTenant, setSelectedTenant] = useState("all");
+  const [availableTenants, setAvailableTenants] = useState(["all", "default"]);
+  const isSuperAdmin = currentUser?.role === "admin" && (currentUser?.tenant_id === "default" || !currentUser?.tenant_id || currentUser?.tenant_id === "*");
   const [apiOnline, setApiOnline] = useState(false);
   const [history, setHistory] = useState([]);
   const [stats, setStats] = useState({ total: 0, by_class: {}, attack_rate: 0 });
@@ -218,7 +219,6 @@ export default function App() {
   const [captureMode, setCaptureMode] = useState("wifi"); // "wifi" | "span" | "manual"
 
   // Pre-configured network interfaces
-  const WIFI_GUID = "\\Device\\NPF_{0F823FF5-FB72-48B3-B29B-6BC2C635ED21}";
   const SPAN_GUID = "\\Device\\NPF_{9500E94C-87BD-4320-BD21-1D31761B841F}"; // Default SPAN port GUID
   const [captureRunning, setCaptureRunning] = useState(false);
   const [captureLog, setCaptureLog] = useState("");
@@ -226,8 +226,6 @@ export default function App() {
   const [blockInput, setBlockInput] = useState("");
   const [blockReason, setBlockReason] = useState("");
   const [blockTTL, setBlockTTL] = useState("");
-  const [blockAudit, setBlockAudit] = useState([]);
-  const [showAudit, setShowAudit] = useState(false);
   const [devices, setDevices] = useState([]);
   const [devicesLoading, setDevicesLoading] = useState(false);
   const [devicesScanTime, setDevicesScanTime] = useState(null);
@@ -242,8 +240,6 @@ export default function App() {
   const [licensingError, setLicensingError] = useState("");
   const [activeTab, setActiveTab] = useState("overview");
   const [themeMode, setThemeMode] = useState(() => localStorage.getItem("ng_theme") || "dark");
-  const [pdfBytes, setPdfBytes] = useState(null);
-  const [pdfName, setPdfName] = useState("report.pdf");
   const [showReportModal, setShowReportModal] = useState(false);
   const [reportMode, setReportMode] = useState("last"); // "last" | "hours" | "range"
   const [reportHours, setReportHours] = useState("6");
@@ -336,9 +332,10 @@ export default function App() {
         return res.json();
       };
 
+      const tenantQuery = selectedTenant && selectedTenant !== "all" ? `&tenant_id=${encodeURIComponent(selectedTenant)}` : "";
       const [hRes, sRes, cRes, bRes, iRes] = await Promise.all([
-        fetch(`${API}/history?limit=1000&mode=live`, { headers: authH }).then(checkAuth).catch(e => { if (e.message === "UNAUTHORIZED") throw e; return []; }),
-        fetch(`${API}/stats?mode=live`, { headers: authH }).then(checkAuth).catch(e => { if (e.message === "UNAUTHORIZED") throw e; return {}; }),
+        fetch(`${API}/history?limit=1000&mode=live${tenantQuery}`, { headers: authH }).then(checkAuth).catch(e => { if (e.message === "UNAUTHORIZED") throw e; return []; }),
+        fetch(`${API}/stats?mode=live${tenantQuery}`, { headers: authH }).then(checkAuth).catch(e => { if (e.message === "UNAUTHORIZED") throw e; return {}; }),
         fetch(`${API}/capture/status`, { headers: authH }).then(checkAuth).catch(e => { if (e.message === "UNAUTHORIZED") throw e; return {}; }),
         fetch(`${API}/blocked-ips`, { headers: authH }).then(checkAuth).catch(e => { if (e.message === "UNAUTHORIZED") throw e; return { items: [] }; }),
         fetch(`${API}/capture/interfaces`, { headers: authH }).then(checkAuth).catch(e => { if (e.message === "UNAUTHORIZED") throw e; return { interfaces: [] }; }),
@@ -377,7 +374,34 @@ export default function App() {
         setApiOnline(false);
       }
     }
-  }, [selectedIface, handleLogout]);
+  }, [selectedIface, handleLogout, selectedTenant]);
+
+  const refreshTenants = useCallback(async () => {
+    if (!auth || !isSuperAdmin) return;
+    const activeToken = TokenStore.getAccess();
+    if (!activeToken) return;
+    try {
+      const r = await fetch(`${API}/auth/tenants`, { headers: { Authorization: `Bearer ${activeToken}` } });
+      if (r.ok) {
+        const d = await r.json();
+        if (d?.tenants && Array.isArray(d.tenants)) {
+          const unique = Array.from(new Set(["all", ...d.tenants]));
+          setAvailableTenants(unique);
+          setSelectedTenant(prev => (unique.includes(prev) ? prev : "all"));
+        }
+      }
+    } catch {
+      /* ignore tenant refresh error */
+    }
+  }, [auth, isSuperAdmin]);
+
+  useEffect(() => {
+    if (auth && isSuperAdmin) {
+      refreshTenants();
+      const t = setInterval(refreshTenants, 5000);
+      return () => clearInterval(t);
+    }
+  }, [auth, isSuperAdmin, refreshTenants]);
 
   useEffect(() => {
     if (!auth) return;
@@ -494,7 +518,14 @@ export default function App() {
       });
     }
 
-    return buckets.map(({ minuteKey, ...rest }) => rest);
+    return buckets.map(({ time, NORMAL, BRUTE_FORCE, DOS_DDOS, WEB_ATTACK, INFILTRATION }) => ({
+      time,
+      NORMAL,
+      BRUTE_FORCE,
+      DOS_DDOS,
+      WEB_ATTACK,
+      INFILTRATION
+    }));
   })();
 
   const pieData = Object.entries(bc).map(([name, value]) => ({ name, value }));
@@ -1116,9 +1147,14 @@ select { color-scheme: dark; } select.dark-input { background: #0a1628 !importan
           {currentUser && (
             <div style={{ marginBottom: 8, background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 8, padding: "10px 12px" }}>
               <div style={{ fontSize: 12, fontWeight: 700, color: "#f1f5f9", marginBottom: 3 }}>👤 {currentUser.username}</div>
-              <span style={{ fontSize: 10, fontWeight: 700, color: ROLE_COLORS[currentUser.role] || "#64748b", background: (ROLE_COLORS[currentUser.role] || "#64748b") + "20", borderRadius: 4, padding: "2px 7px", letterSpacing: "0.06em", textTransform: "uppercase" }}>
-                {currentUser.role}
-              </span>
+              <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+                <span style={{ fontSize: 10, fontWeight: 700, color: ROLE_COLORS[currentUser.role] || "#64748b", background: (ROLE_COLORS[currentUser.role] || "#64748b") + "20", borderRadius: 4, padding: "2px 7px", letterSpacing: "0.06em", textTransform: "uppercase" }}>
+                  {currentUser.role}
+                </span>
+                <span style={{ fontSize: 10, color: "#38bdf8", background: "rgba(56,189,248,0.12)", border: "1px solid rgba(56,189,248,0.2)", borderRadius: 4, padding: "2px 6px" }}>
+                  {currentUser.tenant_id === "default" || !currentUser.tenant_id ? "SuperAdmin" : currentUser.tenant_id}
+                </span>
+              </div>
             </div>
           )}
           <button onClick={() => {
@@ -1147,7 +1183,30 @@ select { color-scheme: dark; } select.dark-input { background: #0a1628 !importan
               {new Date().toLocaleString()} · {stats.total?.toLocaleString() || 0} events tracked · {(stats.attack_rate || 0).toFixed(1)}% attack pressure
             </div>
           </div>
-          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", justifyContent: "flex-end" }}>
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", justifyContent: "flex-end", alignItems: "center" }}>
+            {isSuperAdmin && (
+              <div style={{ display: "flex", alignItems: "center", gap: 8, background: "rgba(56, 189, 248, 0.08)", border: "1px solid rgba(56, 189, 248, 0.25)", borderRadius: 8, padding: "5px 12px" }}>
+                <span style={{ fontSize: 11, fontWeight: 700, color: "#38bdf8", textTransform: "uppercase", letterSpacing: "0.08em" }}>🏢 Client:</span>
+                <select
+                  value={selectedTenant}
+                  onChange={(e) => setSelectedTenant(e.target.value)}
+                  style={{ background: "#0a1628", color: "#f1f5f9", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 6, padding: "4px 8px", fontSize: 12, fontWeight: 600, outline: "none", cursor: "pointer", colorScheme: "dark" }}
+                >
+                  <option value="all">🌐 All Clients (Global)</option>
+                  {availableTenants.filter(t => t !== "all").map(t => (
+                    <option key={t} value={t}>
+                      {t === "default" ? "🏢 Internal (default)" : `🏭 ${t}`}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+            {!isSuperAdmin && currentUser?.tenant_id && (
+              <div style={{ display: "flex", alignItems: "center", gap: 6, background: "rgba(56, 189, 248, 0.08)", border: "1px solid rgba(56, 189, 248, 0.2)", borderRadius: 8, padding: "5px 12px" }}>
+                <span style={{ fontSize: 11, color: "#94a3b8" }}>Client:</span>
+                <span style={{ fontSize: 12, fontWeight: 700, color: "#38bdf8" }}>{currentUser.tenant_id}</span>
+              </div>
+            )}
             <button onClick={toggleTheme} className="action-btn" style={{ flexShrink: 0 }}>
               {themeMode === "dark" ? "☀ Soft Mode" : "🌙 Dark Mode"}
             </button>
@@ -1238,7 +1297,16 @@ select { color-scheme: dark; } select.dark-input { background: #0a1628 !importan
           <AssistantTab token={TokenStore.getAccess()} API={API} themeMode={themeMode} />
         )}
         {activeTab === "users" && currentUser?.role === "admin" && (
-          <UsersTab token={TokenStore.getAccess()} currentUser={currentUser} themeMode={themeMode} API={API} />
+          <UsersTab
+            token={TokenStore.getAccess()}
+            currentUser={currentUser}
+            themeMode={themeMode}
+            API={API}
+            selectedTenant={selectedTenant}
+            isSuperAdmin={isSuperAdmin}
+            tenants={availableTenants}
+            refreshTenants={refreshTenants}
+          />
         )}
 
       </div>
@@ -1256,19 +1324,43 @@ select { color-scheme: dark; } select.dark-input { background: #0a1628 !importan
 
       {/* Report Modal */}
       {showReportModal && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center" }}>
-          <div style={{ background: "#0a1628", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 16, padding: "28px 28px", width: 420, boxShadow: "0 20px 60px rgba(0,0,0,0.5)" }}>
-            <div style={{ fontSize: 16, fontWeight: 700, color: "#f1f5f9", marginBottom: 6 }}>Export Report</div>
-            <div style={{ fontSize: 12, color: "#475569", marginBottom: 20 }}>Select time window for the report</div>
+        <section role="dialog" aria-modal="true" aria-label="Export Report Modal" style={{
+          position: "fixed",
+          inset: 0,
+          background: themeMode === "soft" ? "rgba(15,23,42,0.45)" : "rgba(0,0,0,0.7)",
+          backdropFilter: "blur(4px)",
+          zIndex: 1000,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center"
+        }}>
+          <div style={{
+            background: themeMode === "soft" ? "#ffffff" : "#0a1628",
+            border: themeMode === "soft" ? "1px solid #cbd5e1" : "1px solid rgba(255,255,255,0.1)",
+            borderRadius: 16,
+            padding: "28px 28px",
+            width: 420,
+            boxShadow: themeMode === "soft" ? "0 20px 50px rgba(15,23,42,0.15)" : "0 20px 60px rgba(0,0,0,0.5)",
+            color: themeMode === "soft" ? "#0f172a" : "#f1f5f9"
+          }}>
+            <div style={{ fontSize: 16, fontWeight: 700, color: themeMode === "soft" ? "#0f172a" : "#f1f5f9", marginBottom: 6 }}>Export Report</div>
+            <div style={{ fontSize: 12, color: themeMode === "soft" ? "#64748b" : "#475569", marginBottom: 20 }}>Select time window for the report</div>
 
             {/* Mode selector */}
             <div style={{ display: "flex", gap: 8, marginBottom: 20 }}>
               {[["last", "Last 500 Events"], ["hours", "Last N Hours"], ["range", "Custom Range"]].map(([m, label]) => (
                 <button key={m} onClick={() => setReportMode(m)} style={{
-                  flex: 1, padding: "8px 6px", borderRadius: 8, fontSize: 11, fontWeight: 600, cursor: "pointer",
-                  background: reportMode === m ? "rgba(14,165,233,0.2)" : "rgba(255,255,255,0.04)",
-                  border: reportMode === m ? "1px solid rgba(14,165,233,0.5)" : "1px solid rgba(255,255,255,0.08)",
-                  color: reportMode === m ? "#38bdf8" : "#64748b", transition: "all 0.15s"
+                  flex: 1, padding: "9px 8px", borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: "pointer",
+                  background: reportMode === m
+                    ? (themeMode === "soft" ? "rgba(14,165,233,0.15)" : "rgba(14,165,233,0.25)")
+                    : (themeMode === "soft" ? "#f8fafc" : "rgba(255,255,255,0.06)"),
+                  border: reportMode === m
+                    ? "1px solid rgba(14,165,233,0.6)"
+                    : (themeMode === "soft" ? "1px solid #cbd5e1" : "1px solid rgba(255,255,255,0.15)"),
+                  color: reportMode === m
+                    ? (themeMode === "soft" ? "#0284c7" : "#38bdf8")
+                    : (themeMode === "soft" ? "#334155" : "#e2e8f0"),
+                  transition: "all 0.15s"
                 }}>{label}</button>
               ))}
             </div>
@@ -1276,49 +1368,89 @@ select { color-scheme: dark; } select.dark-input { background: #0a1628 !importan
             {/* Hours input */}
             {reportMode === "hours" && (
               <div style={{ marginBottom: 20 }}>
-                <label style={{ fontSize: 11, color: "#64748b", letterSpacing: "0.08em", textTransform: "uppercase", display: "block", marginBottom: 8 }}>Hours Back</label>
+                <label style={{ fontSize: 11, color: themeMode === "soft" ? "#475569" : "#64748b", letterSpacing: "0.08em", textTransform: "uppercase", display: "block", marginBottom: 8, fontWeight: 600 }}>Hours Back</label>
                 <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
                   {["1", "3", "6", "12", "24", "48"].map(h => (
                     <button key={h} onClick={() => setReportHours(h)} style={{
                       padding: "6px 14px", borderRadius: 6, fontSize: 12, cursor: "pointer", fontWeight: 600,
-                      background: reportHours === h ? "rgba(14,165,233,0.2)" : "rgba(255,255,255,0.04)",
-                      border: reportHours === h ? "1px solid rgba(14,165,233,0.5)" : "1px solid rgba(255,255,255,0.08)",
-                      color: reportHours === h ? "#38bdf8" : "#94a3b8"
+                      background: reportHours === h
+                        ? (themeMode === "soft" ? "rgba(14,165,233,0.15)" : "rgba(14,165,233,0.2)")
+                        : (themeMode === "soft" ? "#f8fafc" : "rgba(255,255,255,0.04)"),
+                      border: reportHours === h
+                        ? "1px solid rgba(14,165,233,0.5)"
+                        : (themeMode === "soft" ? "1px solid #cbd5e1" : "1px solid rgba(255,255,255,0.08)"),
+                      color: reportHours === h
+                        ? (themeMode === "soft" ? "#0284c7" : "#38bdf8")
+                        : (themeMode === "soft" ? "#334155" : "#94a3b8")
                     }}>{h}h</button>
                   ))}
                 </div>
                 <input type="number" value={reportHours} onChange={e => setReportHours(e.target.value)}
                   placeholder="Custom hours..." min="0.5" step="0.5"
-                  style={{ width: "100%", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, padding: "10px 12px", color: "#f1f5f9", fontSize: 13, outline: "none" }} />
+                  style={{
+                    width: "100%",
+                    background: themeMode === "soft" ? "#ffffff" : "rgba(255,255,255,0.05)",
+                    border: themeMode === "soft" ? "1px solid #cbd5e1" : "1px solid rgba(255,255,255,0.1)",
+                    borderRadius: 8,
+                    padding: "10px 12px",
+                    color: themeMode === "soft" ? "#0f172a" : "#f1f5f9",
+                    fontSize: 13,
+                    outline: "none"
+                  }} />
               </div>
             )}
 
             {/* Range input */}
             {reportMode === "range" && (
               <div style={{ marginBottom: 20 }}>
-                <label style={{ fontSize: 11, color: "#64748b", letterSpacing: "0.08em", textTransform: "uppercase", display: "block", marginBottom: 8 }}>Start Time</label>
+                <label style={{ fontSize: 11, color: themeMode === "soft" ? "#475569" : "#64748b", letterSpacing: "0.08em", textTransform: "uppercase", display: "block", marginBottom: 8, fontWeight: 600 }}>Start Time</label>
                 <input type="datetime-local" value={reportStart} onChange={e => setReportStart(e.target.value)}
-                  style={{ width: "100%", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, padding: "10px 12px", color: "#f1f5f9", fontSize: 13, outline: "none", marginBottom: 12, colorScheme: "dark" }} />
-                <label style={{ fontSize: 11, color: "#64748b", letterSpacing: "0.08em", textTransform: "uppercase", display: "block", marginBottom: 8 }}>End Time</label>
+                  style={{
+                    width: "100%",
+                    background: themeMode === "soft" ? "#ffffff" : "rgba(255,255,255,0.05)",
+                    border: themeMode === "soft" ? "1px solid #cbd5e1" : "1px solid rgba(255,255,255,0.1)",
+                    borderRadius: 8,
+                    padding: "10px 12px",
+                    color: themeMode === "soft" ? "#0f172a" : "#f1f5f9",
+                    fontSize: 13,
+                    outline: "none",
+                    marginBottom: 12,
+                    colorScheme: themeMode === "soft" ? "light" : "dark"
+                  }} />
+                <label style={{ fontSize: 11, color: themeMode === "soft" ? "#475569" : "#64748b", letterSpacing: "0.08em", textTransform: "uppercase", display: "block", marginBottom: 8, fontWeight: 600 }}>End Time</label>
                 <input type="datetime-local" value={reportEnd} onChange={e => setReportEnd(e.target.value)}
-                  style={{ width: "100%", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, padding: "10px 12px", color: "#f1f5f9", fontSize: 13, outline: "none", colorScheme: "dark" }} />
+                  style={{
+                    width: "100%",
+                    background: themeMode === "soft" ? "#ffffff" : "rgba(255,255,255,0.05)",
+                    border: themeMode === "soft" ? "1px solid #cbd5e1" : "1px solid rgba(255,255,255,0.1)",
+                    borderRadius: 8,
+                    padding: "10px 12px",
+                    color: themeMode === "soft" ? "#0f172a" : "#f1f5f9",
+                    fontSize: 13,
+                    outline: "none",
+                    colorScheme: themeMode === "soft" ? "light" : "dark"
+                  }} />
               </div>
             )}
 
             {/* Buttons */}
             <div style={{ display: "flex", gap: 10, marginTop: 8 }}>
               <button onClick={() => setShowReportModal(false)} style={{
-                flex: 1, padding: "11px", borderRadius: 8, background: "rgba(255,255,255,0.04)",
-                border: "1px solid rgba(255,255,255,0.08)", color: "#64748b", fontSize: 13, fontWeight: 600, cursor: "pointer"
+                flex: 1, padding: "11px", borderRadius: 8,
+                background: themeMode === "soft" ? "#f1f5f9" : "rgba(255,255,255,0.06)",
+                border: themeMode === "soft" ? "1px solid #cbd5e1" : "1px solid rgba(255,255,255,0.15)",
+                color: themeMode === "soft" ? "#334155" : "#e2e8f0",
+                fontSize: 13, fontWeight: 600, cursor: "pointer"
               }}>Cancel</button>
               <button onClick={generateReport} style={{
                 flex: 2, padding: "11px", borderRadius: 8,
                 background: "linear-gradient(135deg, #0ea5e9, #2563eb)",
-                border: "none", color: "white", fontSize: 13, fontWeight: 600, cursor: "pointer"
+                border: "none", color: "#ffffff", fontSize: 13, fontWeight: 600, cursor: "pointer",
+                boxShadow: "0 4px 12px rgba(14,165,233,0.3)"
               }}>↓ Generate Report</button>
             </div>
           </div>
-        </div>
+        </section>
       )}
 </div>
   );

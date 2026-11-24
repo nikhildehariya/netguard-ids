@@ -12,9 +12,16 @@ import psycopg2.extras
 BASE_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(BASE_DIR / "src"))
 
-from database import get_db_connection, init_pg_db
+from database import get_direct_postgres_connection, release_db_connection, init_pg_db
 
 def migrate_all():
+    # Defensive Pre-flight: verify real PostgreSQL connectivity before initiating sync
+    test_pg = get_direct_postgres_connection()
+    if not test_pg:
+        print("[migration] PostgreSQL not configured or unreachable. Skipping cloud sync safely.")
+        return False
+    release_db_connection(test_pg)
+
     print("[migration] Initializing PostgreSQL schemas...")
     init_pg_db()
 
@@ -24,7 +31,9 @@ def migrate_all():
     auth_db = logs_dir / "auth.db"
     if auth_db.exists():
         print(f"[migration] Migrating {auth_db.name}...")
-        pg_conn = get_db_connection()
+        pg_conn = get_direct_postgres_connection()
+        if not pg_conn:
+            return False
         try:
             with pg_conn.cursor() as cur:
                 s_conn = sqlite3.connect(auth_db)
@@ -44,12 +53,13 @@ def migrate_all():
                         dict(u).get("last_login"),
                         dict(u).get("full_name", ""),
                         dict(u).get("phone", ""),
-                        dict(u).get("designation", "")
+                        dict(u).get("designation", ""),
+                        dict(u).get("tenant_id", "default")
                     ) for u in s_users]
                     psycopg2.extras.execute_values(
                         cur,
                         """
-                        INSERT INTO users (id, username, email, password_hash, role, is_active, created_at, last_login, full_name, phone, designation)
+                        INSERT INTO users (id, username, email, password_hash, role, is_active, created_at, last_login, full_name, phone, designation, tenant_id)
                         VALUES %s
                         ON CONFLICT (username) DO NOTHING
                         """,
@@ -140,7 +150,9 @@ def migrate_all():
     block_db = logs_dir / "blocklist.db"
     if block_db.exists():
         print(f"[migration] Migrating {block_db.name}...")
-        pg_conn = get_db_connection()
+        pg_conn = get_direct_postgres_connection()
+        if not pg_conn:
+            return False
         try:
             with pg_conn.cursor() as cur:
                 s_conn = sqlite3.connect(block_db)
@@ -218,7 +230,9 @@ def migrate_all():
         chunk_size = 5000
         migrated_cnt = 0
 
-        pg_conn = get_db_connection()
+        pg_conn = get_direct_postgres_connection()
+        if not pg_conn:
+            return False
         while True:
             rows = s_cur.fetchmany(chunk_size)
             if not rows:
@@ -231,7 +245,8 @@ def migrate_all():
                 dict(d).get("severity", "none"),
                 dict(d).get("source_ip", "unknown"),
                 dict(d).get("flow_id", ""),
-                dict(d).get("mode", "live")
+                dict(d).get("mode", "live"),
+                dict(d).get("tenant_id", "default")
             ) for d in rows]
 
             try:
@@ -239,7 +254,7 @@ def migrate_all():
                     psycopg2.extras.execute_values(
                         cur,
                         """
-                        INSERT INTO detections (id, timestamp, prediction, confidence, severity, source_ip, flow_id, mode)
+                        INSERT INTO detections (id, timestamp, prediction, confidence, severity, source_ip, flow_id, mode, tenant_id)
                         VALUES %s
                         ON CONFLICT (id) DO NOTHING
                         """,
@@ -256,7 +271,7 @@ def migrate_all():
                     pg_conn.close()
                 except Exception:
                     pass
-                pg_conn = get_db_connection()
+                pg_conn = get_direct_postgres_connection()
 
         if pg_conn:
             with pg_conn.cursor() as cur:

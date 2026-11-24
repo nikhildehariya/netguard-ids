@@ -1,4 +1,3 @@
-import React from "react";
 import { SectionTitle } from "./Common";
 import { TokenStore } from "../App";
 

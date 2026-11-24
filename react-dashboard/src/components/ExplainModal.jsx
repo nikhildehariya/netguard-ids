@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from "react";
-import { Pill, SEV_COLOR } from "./Common";
+import { useState, useEffect } from "react";
+import { SEV_COLOR } from "./Common";
 
 export default function ExplainModal({ isOpen, onClose, record, prediction, token, API, themeMode }) {
   const [loading, setLoading] = useState(false);
@@ -25,7 +25,9 @@ export default function ExplainModal({ isOpen, onClose, record, prediction, toke
           const result = await res.json();
           setData(result);
         }
-      } catch {}
+      } catch {
+        /* ignore explain fetch error */
+      }
       setLoading(false);
     };
 

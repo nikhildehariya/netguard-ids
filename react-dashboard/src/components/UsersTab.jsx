@@ -1,14 +1,23 @@
-import React, { useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 
 const ROLE_COLORS = { admin: "#ef4444", analyst: "#f97316", viewer: "#22d3a0" };
 
-export default function UsersTab({ token, currentUser, themeMode, API }) {
+export default function UsersTab({ token, currentUser, themeMode, API, selectedTenant = "all", isSuperAdmin = false, refreshTenants }) {
   const [users, setUsers] = useState([]);
   const [alertEmail, setAlertEmail] = useState("");
   const [configuredAlertEmail, setConfiguredAlertEmail] = useState("");
   const [defaultAdminEmail, setDefaultAdminEmail] = useState("");
   const [showCreate, setShowCreate] = useState(false);
-  const [form, setForm] = useState({ username: "", email: "", password: "", role: "viewer", full_name: "", phone: "", designation: "" });
+  const [form, setForm] = useState({
+    username: "",
+    email: "",
+    password: "",
+    role: "viewer",
+    full_name: "",
+    phone: "",
+    designation: "",
+    tenant_id: selectedTenant && selectedTenant !== "all" ? selectedTenant : (currentUser?.tenant_id || "default")
+  });
   const [msg, setMsg] = useState("");
   const [loading, setLoading] = useState(false);
   const [savingAlert, setSavingAlert] = useState(false);
@@ -19,8 +28,12 @@ export default function UsersTab({ token, currentUser, themeMode, API }) {
   };
 
   const loadUsers = async () => {
-    const r = await fetch(`${API}/auth/users`, { headers: getHeaders() }).catch(() => null);
-    if (r?.ok) { const d = await r.json(); setUsers(d.users || []); }
+    const tQuery = selectedTenant && selectedTenant !== "all" ? `?tenant_id=${encodeURIComponent(selectedTenant)}` : "";
+    const r = await fetch(`${API}/auth/users${tQuery}`, { headers: getHeaders() }).catch(() => null);
+    if (r?.ok) {
+      const d = await r.json();
+      setUsers(d.users || []);
+    }
   };
 
   const loadAlertSettings = async () => {
@@ -36,13 +49,31 @@ export default function UsersTab({ token, currentUser, themeMode, API }) {
   useEffect(() => {
     loadUsers();
     loadAlertSettings();
-  }, [token]);
+  }, [token, selectedTenant]);
 
   const createUser = async () => {
     setLoading(true);
     const r = await fetch(`${API}/auth/users`, { method: "POST", headers: getHeaders(), body: JSON.stringify(form) }).catch(() => null);
-    if (r?.ok) { const d = await r.json(); setMsg(d.message); setShowCreate(false); setForm({ username: "", email: "", password: "", role: "viewer", full_name: "", phone: "", designation: "" }); loadUsers(); }
-    else { const d = await r?.json(); setMsg(d?.detail || "Failed"); }
+    if (r?.ok) {
+      const d = await r.json();
+      setMsg(d.message);
+      setShowCreate(false);
+      setForm({
+        username: "",
+        email: "",
+        password: "",
+        role: "viewer",
+        full_name: "",
+        phone: "",
+        designation: "",
+        tenant_id: selectedTenant && selectedTenant !== "all" ? selectedTenant : (currentUser?.tenant_id || "default")
+      });
+      loadUsers();
+      if (refreshTenants) refreshTenants();
+    } else {
+      const d = await r?.json();
+      setMsg(d?.detail || "Failed to create user");
+    }
     setLoading(false);
   };
 
@@ -60,6 +91,7 @@ export default function UsersTab({ token, currentUser, themeMode, API }) {
     if (!confirm(`Delete user "${username}"?`)) return;
     await fetch(`${API}/auth/users/${username}`, { method: "DELETE", headers: getHeaders() });
     loadUsers();
+    if (refreshTenants) refreshTenants();
   };
 
   const saveAlertRecipient = async () => {
@@ -110,57 +142,60 @@ export default function UsersTab({ token, currentUser, themeMode, API }) {
 
       {msg && <div style={{ background: "rgba(34,211,160,0.1)", border: "1px solid rgba(34,211,160,0.2)", borderRadius: 8, padding: "10px 14px", marginBottom: 16, fontSize: 13, color: "#22d3a0" }}>{msg}</div>}
 
-      <div style={{ background: isSoft ? "rgba(255,255,255,0.55)" : "rgba(10,22,40,0.8)", border: isSoft ? "1px solid rgba(148,163,184,0.25)" : "1px solid rgba(255,255,255,0.08)", borderRadius: 16, padding: "24px", marginBottom: 20 }}>
-        <div style={{ fontSize: 14, fontWeight: 700, color: isSoft ? "#0f172a" : "#f1f5f9", marginBottom: 6 }}>Notification Settings</div>
-        <div style={{ fontSize: 12, color: isSoft ? "#475569" : "#64748b", marginBottom: 16 }}>
-          Security alert emails will be sent to this address.
+      {/* Notification Settings (Only visible to SuperAdmin) */}
+      {isSuperAdmin && (
+        <div style={{ background: isSoft ? "rgba(255,255,255,0.55)" : "rgba(10,22,40,0.8)", border: isSoft ? "1px solid rgba(148,163,184,0.25)" : "1px solid rgba(255,255,255,0.08)", borderRadius: 16, padding: "24px", marginBottom: 20 }}>
+          <div style={{ fontSize: 14, fontWeight: 700, color: isSoft ? "#0f172a" : "#f1f5f9", marginBottom: 6 }}>Notification Settings (SuperAdmin Only)</div>
+          <div style={{ fontSize: 12, color: isSoft ? "#475569" : "#64748b", marginBottom: 16 }}>
+            Global security alert emails will be dispatched to this verified address.
+          </div>
+          <label style={labelStyle}>Alert Recipient Email</label>
+          <input
+            value={alertEmail}
+            onChange={e => setAlertEmail(e.target.value)}
+            placeholder="admin@example.com"
+            type="email"
+            style={inputStyle}
+          />
+          <div style={{ fontSize: 11, color: isSoft ? "#64748b" : "#475569", marginBottom: 12 }}>
+            {configuredAlertEmail
+              ? `Configured recipient: ${configuredAlertEmail}`
+              : `Fallback (first active admin): ${defaultAdminEmail || "not available"}`}
+          </div>
+          <div style={{ display: "flex", gap: 10 }}>
+            <button
+              onClick={saveAlertRecipient}
+              disabled={savingAlert}
+              style={{
+                padding: "10px 14px",
+                borderRadius: 8,
+                background: "linear-gradient(135deg,#0ea5e9,#2563eb)",
+                border: "none",
+                color: "white",
+                fontSize: 12,
+                fontWeight: 700,
+                cursor: "pointer"
+              }}
+            >
+              {savingAlert ? "Saving..." : "Save Recipient"}
+            </button>
+            <button
+              onClick={loadAlertSettings}
+              style={{
+                padding: "10px 14px",
+                borderRadius: 8,
+                background: "rgba(255,255,255,0.04)",
+                border: "1px solid rgba(255,255,255,0.08)",
+                color: "#94a3b8",
+                fontSize: 12,
+                cursor: "pointer"
+              }}
+            >
+              Reload
+            </button>
+          </div>
         </div>
-        <label style={labelStyle}>Alert Recipient Email</label>
-        <input
-          value={alertEmail}
-          onChange={e => setAlertEmail(e.target.value)}
-          placeholder="admin@example.com"
-          type="email"
-          style={inputStyle}
-        />
-        <div style={{ fontSize: 11, color: isSoft ? "#64748b" : "#475569", marginBottom: 12 }}>
-          {configuredAlertEmail
-            ? `Configured recipient: ${configuredAlertEmail}`
-            : `Fallback (first active admin): ${defaultAdminEmail || "not available"}`}
-        </div>
-        <div style={{ display: "flex", gap: 10 }}>
-          <button
-            onClick={saveAlertRecipient}
-            disabled={savingAlert}
-            style={{
-              padding: "10px 14px",
-              borderRadius: 8,
-              background: "linear-gradient(135deg,#0ea5e9,#2563eb)",
-              border: "none",
-              color: "white",
-              fontSize: 12,
-              fontWeight: 700,
-              cursor: "pointer"
-            }}
-          >
-            {savingAlert ? "Saving..." : "Save Recipient"}
-          </button>
-          <button
-            onClick={loadAlertSettings}
-            style={{
-              padding: "10px 14px",
-              borderRadius: 8,
-              background: "rgba(255,255,255,0.04)",
-              border: "1px solid rgba(255,255,255,0.08)",
-              color: "#94a3b8",
-              fontSize: 12,
-              cursor: "pointer"
-            }}
-          >
-            Reload
-          </button>
-        </div>
-      </div>
+      )}
 
       {/* Create User Form */}
       {showCreate && (
@@ -181,6 +216,17 @@ export default function UsersTab({ token, currentUser, themeMode, API }) {
                 <option value="admin">Admin — Full access</option>
               </select>
             </div>
+            {isSuperAdmin && (
+              <div>
+                <label style={labelStyle}>Tenant / Client ID</label>
+                <input
+                  value={form.tenant_id}
+                  onChange={e => setForm(p => ({ ...p, tenant_id: e.target.value }))}
+                  placeholder="e.g. sharma_fabrics, gupta_hospital, default"
+                  style={inputStyle}
+                />
+              </div>
+            )}
           </div>
           <div style={{ display: "flex", gap: 10, marginTop: 4 }}>
             <button onClick={() => setShowCreate(false)} style={{ flex: 1, padding: "10px", borderRadius: 8, background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)", color: "#64748b", fontSize: 13, cursor: "pointer" }}>Cancel</button>
@@ -193,13 +239,13 @@ export default function UsersTab({ token, currentUser, themeMode, API }) {
 
       {/* Users Table */}
       <div className="users-table" style={{ background: "rgba(10,22,40,0.6)", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 16, overflow: "hidden" }}>
-        <div style={{ display: "grid", gridTemplateColumns: "1.2fr 1.5fr 120px 100px 160px", padding: "12px 20px", borderBottom: "1px solid rgba(255,255,255,0.05)", background: "rgba(0,0,0,0.2)" }}>
-          {["USER DETAILS", "CONTACT INFO", "ROLE", "STATUS", "ACTIONS"].map(h => (
+        <div style={{ display: "grid", gridTemplateColumns: isSuperAdmin ? "1.2fr 1.3fr 110px 100px 90px 140px" : "1.2fr 1.5fr 120px 100px 160px", padding: "12px 20px", borderBottom: "1px solid rgba(255,255,255,0.05)", background: "rgba(0,0,0,0.2)" }}>
+          {(isSuperAdmin ? ["USER DETAILS", "CONTACT INFO", "TENANT", "ROLE", "STATUS", "ACTIONS"] : ["USER DETAILS", "CONTACT INFO", "ROLE", "STATUS", "ACTIONS"]).map(h => (
             <div key={h} style={{ fontSize: 10, fontWeight: 700, color: "#334155", letterSpacing: "0.1em" }}>{h}</div>
           ))}
         </div>
         {users.map((u, i) => (
-          <div key={u.id} style={{ display: "grid", gridTemplateColumns: "1.2fr 1.5fr 120px 100px 160px", padding: "14px 20px", borderBottom: i < users.length - 1 ? "1px solid rgba(255,255,255,0.04)" : "none", alignItems: "center", background: i % 2 === 0 ? "transparent" : "rgba(255,255,255,0.01)" }}>
+          <div key={u.id} style={{ display: "grid", gridTemplateColumns: isSuperAdmin ? "1.2fr 1.3fr 110px 100px 90px 140px" : "1.2fr 1.5fr 120px 100px 160px", padding: "14px 20px", borderBottom: i < users.length - 1 ? "1px solid rgba(255,255,255,0.04)" : "none", alignItems: "center", background: i % 2 === 0 ? "transparent" : "rgba(255,255,255,0.01)" }}>
             <div className="users-name" style={{ fontSize: 13, color: "#f1f5f9" }}>
               <div style={{ fontWeight: 600, display: "flex", alignItems: "center" }}>
                 {u.username}
@@ -212,6 +258,13 @@ export default function UsersTab({ token, currentUser, themeMode, API }) {
               <div style={{ fontSize: 12, color: isSoft ? "#334155" : "#cbd5e1", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{u.email}</div>
               <div style={{ fontSize: 11, color: isSoft ? "#64748b" : "#64748b", marginTop: 2 }}>{u.phone || "—"}</div>
             </div>
+            {isSuperAdmin && (
+              <div>
+                <span style={{ fontSize: 10, fontWeight: 700, color: "#38bdf8", background: "rgba(56,189,248,0.12)", border: "1px solid rgba(56,189,248,0.25)", borderRadius: 6, padding: "3px 8px" }}>
+                  {u.tenant_id || "default"}
+                </span>
+              </div>
+            )}
             <div>
               {u.username === "admin" ? (
                 <span style={{ fontSize: 10, fontWeight: 700, color: ROLE_COLORS[u.role], background: ROLE_COLORS[u.role] + "20", borderRadius: 4, padding: "3px 8px", textTransform: "uppercase", letterSpacing: "0.06em" }}>{u.role}</span>

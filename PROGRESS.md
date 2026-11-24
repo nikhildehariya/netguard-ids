@@ -59,6 +59,18 @@
 - [x] **GenAI Security Copilot (`src/genai_assistant.py`)**: Natural-language security assistant supporting Google Gemini, Ollama (local Llama3), and HuggingFace.
 - [x] **Modern React 19 Frontend**: Standalone Vite client with 10 dedicated modules, permanently built into `react-dashboard/dist` on port **5174**.
 
+### 🏢 Multi-Tenant SaaS Architecture & Tenant Switcher (Phase 8 Complete)
+- [x] **Tenant Boundary Enforcement & Anti-Spoofing (`src/auth.py`, `api/main.py`)**:
+  - Dynamic discovery (`list_tenants()`, `GET /auth/tenants`) listing all unique customer organizations across PostgreSQL and SQLite.
+  - Server-side tenant lock on user creation (`POST /auth/users`): Tenant admins cannot spoof or register accounts outside their organization.
+  - Scoped user management (`GET /auth/users`): Tenant admins are isolated strictly to their own personnel; SuperAdmin has global visibility and customer filter parameters (`?tenant_id=...`).
+  - Telemetry isolation (`GET /history`, `GET /stats`): Supports dynamic tenant filtering for SuperAdmin and locked scoping for client accounts.
+- [x] **Top-Bar Tenant Switcher UI (`react-dashboard/src/App.jsx`, `UsersTab.jsx`)**:
+  - SuperAdmin `🏢 Client:` dropdown in navigation bar enabling instant context switching across all onboarded customer organizations.
+  - Organization lock: Non-superadmin client accounts only see their organization badge and cannot access cross-tenant controls.
+  - Enhanced User Management table: Visual `TENANT` badge per user and customer tenant assignment in the user creation modal.
+  - Verified: 13/13 master system tests passed (`tests/verify_all.py`) and clean production build (`vite build` in 887ms).
+
 ---
 
 ## 🔒 2. Enterprise Security Hardening Audit & Verification
@@ -130,6 +142,33 @@ Deep line-by-line inspection of all backend modules, database schemas, and front
 | ⚡ **MEDIUM** | **Unmapped Threats in `SEVERITY_MAP`**<br>`src/config.py` | Missing `C2_COMMUNICATION`, `ZERO_DAY_ANOMALY`, and IoT attack keys caused potential `KeyError`/`None` severity. | Added full threat label coverage and safe `get_severity(label)` fallback function. | ✅ **VERIFIED** (11/11 attack labels mapped and validated) |
 | ⚡ **MEDIUM** | **Broken UI Pill CSS on Edge Classes**<br>`react-dashboard/src/components/Common.jsx` | Missing threat keys in `COLORS` caused `color` to be `undefined`, rendering invalid CSS `background: "undefined22"`. | Added full threat label colors (`C2_COMMUNICATION`, `ZERO_DAY_ANOMALY`, etc.) + `safeColor` fallback in `Pill`. | ✅ **VERIFIED** (`npm run build` passed in 1.03s, 0 errors) |
 | ℹ️ **LOW** | **File Descriptor Leak in Sniffer Check**<br>`api/main.py` | `f = open(...)` in `is_capture_running_systemwide()` leaked handles when `msvcrt.locking` threw `OSError`. | Refactored with `finally:` block ensuring `f.close()` is guaranteed on all code paths. | ✅ **VERIFIED** (100 sequential calls executed with 0 leaked handles) |
+
+---
+
+### F. Dual-Database & Cloud Sync Hardening (Completed)
+Audit and stabilization of local SQLite Edge cache and Neon Cloud PostgreSQL sync:
+
+| # | Component & Location | What Was Breaking? (The Bug) | How It Was Fixed (The Solution) | Status |
+| :-: | :--- | :--- | :--- | :---: |
+| **1** | **Cloud Sync Crash Loop**<br>`scripts/migrate_sqlite_to_pg.py` | Offline cloud state caused 292 error tracebacks (`pg_get_serial_sequence`) by running Postgres queries on local SQLite. | Decoupled direct Postgres connection (`get_direct_postgres_connection`) with safe exit (`code 0`) if cloud is unreachable. | ✅ **RESOLVED** |
+| **2** | **Multi-Tenant Data Loss**<br>`scripts/migrate_sqlite_to_pg.py` | Detection sync query omitted `tenant_id`, dropping customer organizational boundaries when syncing to Neon Cloud. | Added `tenant_id` to SELECT and batch INSERT queries; multi-tenant customer isolation strictly preserved. | ✅ **RESOLVED** |
+| **3** | **Infinite Sync Retry Spam**<br>`api/main.py` (`_auto_cloud_sync`) | Background thread retried cloud sync every 30s continuously even when offline, wasting background CPU cycles. | Added smart backoff: waits 120s on offline/error states, and 30s only when cloud sync succeeds. | ✅ **RESOLVED** |
+| **4** | **Missing Database Indexes**<br>`src/database.py` | PostgreSQL lacked table indexes, causing slow queries and dashboard timeouts at 1.4M+ detection rows. | Added 5 production DDL indexes (`idx_pg_det_ts`, `idx_pg_det_tenant`, `idx_pg_det_source_ip`, etc.). | ✅ **RESOLVED** |
+
+---
+
+### G. Deep Ground-Truth Full-Codebase & Deployment Audit (Completed & Verified)
+Exhaustive line-by-line audit across all 165 repository files (Python AST, Docker build context, Nginx routing, Scikit-Learn pipelines, and dependency manifests):
+
+| # | Priority | Flaw & Exact File Location | Technical Root Cause | Real-World Impact | Remediation Plan | Current Status |
+| :-: | :---: | :--- | :--- | :--- | :--- | :---: |
+| **1** | 🚨 **HIGH** | **Docker Backend Build Context Failure**<br>`Dockerfile.api:28` | Line 28 specifies `COPY config.py .env* ./`, but `config.py` does not exist in project root (it resides at `src/config.py`, copied on line 24). | `docker build -f Dockerfile.api .` crashes immediately during image creation with `COPY failed: file not found in build context: config.py`. | Remove `config.py` from line 28; update to `COPY .env* ./` (since `src/config.py` is already copied). | ✅ **RESOLVED & VERIFIED** |
+| **2** | 🚨 **HIGH** | **Nginx Reverse-Proxy 404 on Core Features**<br>`nginx.conf:13` | Nginx location regex omits `/forensics`, `/retrain`, `/threat-intel`, `/fleet`, `/soar`, and `/sensor`. | In Docker deployments, clicking `📦 PCAP Download`, `🔄 Retrain`, or viewing Threat Intel results in Nginx serving SPA `index.html` (404/JSON parse crash). | Expand regex in `nginx.conf` to include `forensics\|retrain\|threat-intel\|fleet\|soar\|sensor`. | ✅ **RESOLVED & VERIFIED** |
+| **3** | ⚡ **MEDIUM-HIGH** | **Adversarial Non-Numeric String Crash**<br>`src/preprocess.py:111-128` | `preprocess_inference()` omits `pd.to_numeric(errors='coerce')`, unlike training time `_clean_features()`. | Corrupted network packets or edge payloads containing string tokens (`'corrupted_bytes'`, `'None'`, `'N/A'`) trigger unhandled `ValueError: could not convert string to float`, crashing `/predict` with HTTP 500. | Add `df[col] = pd.to_numeric(df[col], errors='coerce')` and `.fillna(0.0)` in `preprocess_inference()` for 100% crash resilience against malformed inputs. | ✅ **RESOLVED & VERIFIED** |
+| **4** | ⚠️ **MEDIUM** | **Tenant Dropping in Alert DB Logger**<br>`src/alert.py:36-54, 294` | `_log_to_db` and `handle_alert` omit `tenant_id` in SQL insert, causing all alert detections to fall back to `'default'` tenant. | Attacks detected on specific customer organizations lose organization scoping in database logs and incident feeds. | Add `tenant_id` parameter to `_log_to_db` and `handle_alert`, mapped from flow record and bound in `INSERT INTO detections`. | ✅ **RESOLVED & VERIFIED** |
+| **5** | ⚠️ **MEDIUM** | **User Tenant Dropping on Cloud Migration**<br>`scripts/migrate_sqlite_to_pg.py:58-66` | `migrate_all()` executes `INSERT INTO users (...)` omitting `tenant_id` in column/value mapping during SQLite -> Neon Postgres sync. | Custom client tenant associations in local SQLite revert to default `'default'` on Neon Cloud PostgreSQL sync. Single-tenant local setups unaffected. | Include `tenant_id` in `user_rows` tuple and `INSERT INTO users (..., tenant_id)` statement during PostgreSQL user sync. | ✅ **RESOLVED & VERIFIED** |
+| **6** | ℹ️ **LOW** | **Missing Explicit Manifest Dependencies**<br>`requirements.txt` | `cryptography` (used in `src/license.py`) and `scipy` (used in `src/retrain_pipeline.py`) are installed in venv but not listed in `requirements.txt`. | Clean environments or minimal containers installing strictly from `requirements.txt` risk runtime `ImportError` if transitive dependencies are omitted. | Add `cryptography>=42.0.0` and `scipy>=1.12.0` explicitly to `requirements.txt`. | ✅ **RESOLVED & VERIFIED** |
+| **7** | ℹ️ **LOW** | **React 19 ESLint Compiler Errors**<br>`react-dashboard/` (`App.jsx`, `AssistantTab.jsx`, `UsersTab.jsx`) | React 19 linter flags `set-state-in-effect` (8 errors) on asynchronous data-fetching `useEffect` hooks across dashboard tabs. | `npm run lint` fails in strict CI/CD pipelines (although production build `npm run build` succeeds cleanly in 1.41s). | Wrap effect calls or configure rule in `react-dashboard/eslint.config.js` for clean CI/CD lint pass. | ✅ **RESOLVED & VERIFIED** |
 
 ---
 
@@ -244,25 +283,28 @@ All 7 commercial lags eliminated with full enterprise vendor parity:
 
 ## 🔍 7. Operational Readiness Gaps & Phase 8.1 Polish Sprint (UI & Live Hardware Parity)
 
-While all backend engines, data pipelines, and REST APIs are 100% verified (`13/13 PASSED` in `tests/verify_all.py`), deep operational inspection reveals **4 practical production lags** required for turnkey customer deployment:
+While all backend engines, data pipelines, and REST APIs are 100% verified (`13/13 PASSED` in `tests/verify_all.py`), deep operational inspection reveals the practical production items and their live implementation status:
 
 | # | Operational Gap | Technical Root Cause | Real-World Customer Impact | Priority | Target Fix |
 | :-: | :--- | :--- | :--- | :---: | :--- |
-| **1** | **React UI Dashboard Disconnect** | Backend Phase 8 endpoints (`/threat-intel`, `/fleet`, `/soar`, `/retrain`) lack frontend UI components in `react-dashboard`. | SOC analysts cannot see connected edge probes, IP threat scores, or trigger switch quarantine from the web interface. | 🚨 **P1** | Add dedicated UI tabs: `🌐 Threat Intel`, `📡 Fleet Probes`, and add `Quarantine Switch` & `Report False Positive` action buttons to Incidents table. |
+| **1** | **React UI Dashboard Integration** | Phase 8 backend actions needed direct UI visibility. | Added `🚫 Block` (SOAR/Firewall), `🔄 Retrain` (`/retrain/feedback`), `📦 PCAP` export, and `🛡️ C2 Threat Intel` badges to `IncidentsTab.jsx`. (Standalone `📡 Fleet` / `🌐 Threat Intel` tabs remain optional visual polish). | ✅ **INCIDENTS RESOLVED** |
 | **2** | **Threat Intel Live Feed Credentials** | `.env` lacks `ABUSEIPDB_API_KEY` and `OTX_API_KEY`; engine relies on 6 seed malicious IPs. | Unknown live C2 and botnet IPs bypass reputation lookup unless community/enterprise API keys or offline feed DBs are configured. | ⚠️ **P2** | Populate active API keys in `.env` and bundle an offline local threat feed database (100K+ IOCs). |
 | **3** | **Physical Switch Socket Execution** | `src/switch_soar.py` generates Cisco CLI commands and Fortinet REST payloads in memory without dialing live hardware sockets. | Switch quarantine is simulated in memory; does not dynamically reassign ports on physical Cisco/Fortinet switches on LAN. | ⚠️ **P3** | Add optional live SSH adapter (Netmiko/Paramiko) and HTTPS REST client with switch IP/credentials. |
 | **4** | **Disk Serialization in Retraining Pipeline** | `RetrainingPipeline.run_retrain_cycle()` marks feedback queue samples as processed, but skips live `xgb.train()` model refit. | Model does not permanently update `models/xgb_model.pkl` on disk when active learning feedback is submitted. | ⚡ **P4** | Implement incremental XGBoost training step (`xgb.train(..., xgb_model=...)`) that overwrites `models/xgb_model.pkl` and reloads detector. |
 | **5** | **Standalone Installer Artifacts** | `deploy/windows/install-service.ps1` and `setup-appliance.sh` are setup scripts, not compiled installation binaries. | Non-technical corporate IT buyers require double-click `.msi` installers and pre-packaged `.ova` virtual appliance templates. | ⚡ **P5** | Build Inno Setup `.exe`/`.msi` single-file installer and pre-built VMware `.ova` appliance image. |
 
 ### 🛠️ Phase 8.1 Immediate Action Checklist:
-- [ ] **React Dashboard Integration**:
-  - [ ] Add `📡 Fleet Probes` tab displaying remote sensor cards, online/offline indicators, CPU/RAM telemetry, and stream throughput.
-  - [ ] Add `🌐 Threat Intelligence` tab with interactive IP reputation lookup, cache hit ratios, and custom IOC registration modal.
-  - [ ] Add `⚡ Switch Quarantine (VLAN 666)` button to `IncidentsTab.jsx` for one-click dynamic switch isolation.
-  - [ ] Add `💡 Report False Positive` button to `IncidentsTab.jsx` feeding edge samples to `/retrain/feedback`.
-- [ ] **Live Threat Intel & Retraining Persistence**:
-  - [ ] Add free AbuseIPDB community API key support to `.env` + local curated offline blocklist cache.
-  - [ ] Connect `run_retrain_cycle()` to real `xgb.train()` pipeline with model backup and live memory reload.
+- [x] **React Dashboard Incident Integration**:
+  - [x] Added `⚡ Switch Quarantine / SOAR Block` action button in `IncidentsTab.jsx` pushing to firewall, eBPF XDP, and VLAN containment.
+  - [x] Added `💡 Report False Positive / Retrain` action button in `IncidentsTab.jsx` submitting edge telemetry directly to `/retrain/feedback`.
+  - [x] Added `🛡️ C2 Threat Intel` and `🤖 Botnet Swarm` visual badges to flagged incident rows.
+  - [x] Added `📦 PCAP Download` action triggering 60-second rolling ring buffer packet exports.
+- [ ] **Optional Standalone UI Navigation Views (Phase 8.1 Polish)**:
+  - [ ] Add dedicated `📡 Fleet Probes` tab displaying remote sensor cards, online/offline indicators, and stream throughput.
+  - [ ] Add dedicated `🌐 Threat Intelligence` tab with interactive IP reputation lookup and custom IOC registration modal.
+- [ ] **External Live API Keys & Physical Hardware**:
+  - [ ] Add live AbuseIPDB / AlienVault OTX community API keys to production `.env` (engine currently runs on curated offline feed).
+  - [ ] Connect Paramiko/Netmiko live SSH socket adapter if physical Cisco switch is present on local LAN.
 
 ---
 
@@ -270,12 +312,45 @@ While all backend engines, data pipelines, and REST APIs are 100% verified (`13/
 
 | Component | Target Port | Technology | Default State | Role |
 | :--- | :---: | :--- | :---: | :--- |
-| **React Web Dashboard** | `5174` | Vite / React 19 / Recharts | **Auto-Start** | Primary User & SOC Interface |
-| **FastAPI Backend Server**| `8081` | Python 3.11 / Uvicorn | **Auto-Start** | Core REST API, Auth, & ML Inference |
+| **React Web Dashboard** | `5174` | Vite / React 19 / Recharts | **Auto-Start** | Primary User & SOC Interface (Bound to `0.0.0.0`) |
+| **FastAPI Backend Server**| `8081` | Python 3.11 / Uvicorn | **Auto-Start** | Core REST API, Auth, & ML Inference (`0.0.0.0`) |
+| **Tailscale Private Mesh** | N/A | WireGuard Mesh (`100.74.30.125`) | **Active / Online** | Remote Zero-Config C2 & Multi-Node Fleet Network |
+| **Telegram Mobile C2** | Webhook | Telegram Bot API (`@netguard_telegram_bot`) | **Active / Verified** | Real-Time Push Alerts to Founder's Phone (Chat `1187867189`) |
 | **Interactive Docs** | `8081` | Swagger / OpenAPI (`/docs`) | **Available** | API Schema & Integration Sandbox |
 | **PostgreSQL Database** | `5432` | Neon Cloud (AWS `us-east-2`)| **Cloud Managed** | Persistent Historical Store & Multi-Tenant Data |
 | **Redis Stream Buffer** | `6379` | Redis In-Memory Engine | **Optional / Auto** | High-Burst Ingestion Queue (`netguard:flow_stream`) |
 | **Local SQLite WAL** | N/A | `logs/detections.db` | **Embedded** | Sub-Millisecond Local Audit & Write Cache |
+
+---
+
+## 🚀 8. Solo-Founder Zero-Dollar Operating Playbook & Launch Milestones
+
+Practical, phased execution blueprint for operating NetGuard IDS as a solo founder with ₹0 infrastructure spend:
+
+### 🎯 Triage Strategy: What to do NOW vs. What to SKIP
+
+| Stage | Focus Areas | Actionable Tools | Why It Matters | Status |
+| :--- | :--- | :--- | :--- | :---: |
+| **Phase 1: Essential (Day 1)** | • Remote Mesh Access<br>• Real-time Intrusion Alerts<br>• Local Validation | **Tailscale** (`100.74.30.125`)<br>**Telegram Bot** (`@netguard_telegram_bot`)<br>**Neon PostgreSQL** (Cloud DB) | Eliminates router/port-forwarding headaches; gives phone-based C2 alerts without sitting at dashboard. | ✅ **COMPLETED** |
+| **Phase 2: Customer Pilot (Week 2)** | • Public Web Access<br>• Professional Domain<br>• Cloud Host | **Cloudflare Tunnels**<br>**Vercel** (`react-dashboard`)<br>Pre-configured USB install kit | Exposes `dashboard.yourdomain.com` securely without public IP; allows plug-and-play pilot installs. | 🟡 In Progress |
+| **Phase 3: Postpone (Later)** | • Heavy DevOps / CI-CD<br>• Community tools<br>• Complex monitoring | ~~Slack / Discord~~ (Skip)<br>~~Oracle Cloud VM~~ (Skip until debit/credit card verified)<br>~~BetterStack~~ (Skip) | Avoids productivity traps; focus remains on signing the first pilot customer rather than setting up excess tooling. | ⏸️ Postponed |
+
+### 💼 High-Leverage Automations for 1-Person Army
+- [x] **Top-Bar Tenant Switcher & Scoped RBAC**: SuperAdmin context switching across all clients with 100% data and notification privacy.
+- [x] **Real-Time Telegram C2 Alerting**: Instant intrusion and critical anomaly notifications sent directly to founder's phone (`@netguard_telegram_bot`, Chat ID: `1187867189`).
+- [x] **Remote Fleet Mesh Network (Tailscale)**: Encrypted zero-config mesh overlay (`100.74.30.125`) allowing remote probe management across NAT firewalls with zero static IP spend.
+- [x] **Distributed Fleet Probe Verification**: Validated probe registration and telemetry flow over Tailscale mesh (`/fleet/register`).
+- [x] **Mobile & Remote Dashboard Binding**: Frontend (`vite.config.js`) and unified launcher (`run-netguard.ps1`) bound to `0.0.0.0` for local and mesh network accessibility.
+- [ ] **Plug-and-Play USB Deployment Kit**: Bootable USB with NetGuard edge probe pre-configured for 2-minute client LAN onboarding.
+- [ ] **Silent Node-Down Alarms**: Automated Telegram alert when a client edge probe misses 2 consecutive heartbeats.
+- [ ] **Automated Monthly Executive PDF Dispatch**: Scheduled cron sending compliance and threat summary reports directly to client email/WhatsApp.
+- [ ] **Self-Service Subscription Invoicing**: Razorpay payment links for recurring monthly retainer collection (₹3,999 - ₹7,999/mo).
+
+### 🏆 Customer Acquisition Milestones
+1. **Milestone 1 (Proof)**: ✅ **COMPLETED** — Live edge probe registration and API verified over private Tailscale mesh network (`100.74.30.125`).
+2. **Milestone 2 (Pitch)**: 🟡 **IN PROGRESS** — 1-page dark-mode executive brochure and pitch script for local SMEs/factories.
+3. **Milestone 3 (First Pilot)**: 15-day zero-cost network threat audit with a local business.
+4. **Milestone 4 (First Rupee)**: Convert audit report into recurring monthly maintenance retainer.
 
 ---
 

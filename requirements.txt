@@ -27,3 +27,8 @@ python-nmap==0.7.1
 shap==0.45.1
 matplotlib>=3.8.0
 
+# Security, Licensing & Active Learning
+cryptography>=42.0.0
+scipy>=1.13.0
+
+

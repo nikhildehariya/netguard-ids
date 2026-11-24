@@ -147,6 +147,27 @@ def list_users(tenant_id: Optional[str] = None) -> list:
     finally:
         release_db_connection(conn)
 
+def list_tenants() -> list:
+    """Retrieve all unique tenant identifiers across registered users."""
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as c:
+            c.execute("SELECT DISTINCT tenant_id FROM users WHERE tenant_id IS NOT NULL AND tenant_id != '' ORDER BY tenant_id ASC")
+            rows = c.fetchall()
+            tenants = []
+            for r in rows:
+                try:
+                    val = r["tenant_id"] if (isinstance(r, dict) or hasattr(r, "keys")) else r[0]
+                except Exception:
+                    val = r[0] if hasattr(r, "__getitem__") else str(r)
+                if val and str(val) not in tenants:
+                    tenants.append(str(val))
+            if "default" not in tenants:
+                tenants.insert(0, "default")
+            return tenants
+    finally:
+        release_db_connection(conn)
+
 def update_user_role(username: str, new_role: str) -> dict:
     if new_role not in ROLES:
         return {"success": False, "message": "Invalid role"}

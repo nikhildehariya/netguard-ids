@@ -34,15 +34,16 @@ _db_lock = threading.Lock()
 
 # ── Logging ────────────────────────────────────────────────────
 def _log_to_db(result: dict, source_ip: str = "unknown",
-               flow_id: str = "", test_mode: bool = False):
+               flow_id: str = "", test_mode: bool = False,
+               tenant_id: str = "default"):
     with _db_lock:
         conn = get_db_connection()
         try:
             with conn.cursor() as cur:
                 cur.execute("""
                     INSERT INTO detections
-                        (timestamp, prediction, confidence, severity, source_ip, flow_id, mode)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s)
+                        (timestamp, prediction, confidence, severity, source_ip, flow_id, mode, tenant_id)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                 """, (
                     result["timestamp"],
                     result["prediction"],
@@ -51,6 +52,7 @@ def _log_to_db(result: dict, source_ip: str = "unknown",
                     source_ip,
                     flow_id,
                     "test" if test_mode else "live",
+                    tenant_id or "default",
                 ))
             conn.commit()
         except Exception as e:
@@ -289,9 +291,10 @@ def _maybe_auto_block(result: dict, source_ip: str):
 
 # ── Main handler ───────────────────────────────────────────────
 def handle_alert(result: dict, source_ip: str = "unknown",
-                 flow_id: str = "", test_mode: bool = False):
-    # Always log to SQLite
-    _log_to_db(result, source_ip, flow_id=flow_id, test_mode=test_mode)
+                 flow_id: str = "", test_mode: bool = False,
+                 tenant_id: str = "default"):
+    # Always log to SQLite/Postgres with proper tenant scoping
+    _log_to_db(result, source_ip, flow_id=flow_id, test_mode=test_mode, tenant_id=tenant_id)
 
     # Email/Telegram/AutoBlock only for real attacks
     if (not test_mode

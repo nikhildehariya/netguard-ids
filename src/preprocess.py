@@ -122,7 +122,9 @@ def preprocess_inference(record: dict) -> np.ndarray:
             df[col] = 0
 
     df = df[FEATURE_COLS]
+    for col in FEATURE_COLS:
+        df[col] = pd.to_numeric(df[col], errors='coerce')
     df.replace([np.inf, -np.inf], np.nan, inplace=True)
-    df.fillna(0, inplace=True)
+    df.fillna(0.0, inplace=True)
 
     return scaler.transform(df)

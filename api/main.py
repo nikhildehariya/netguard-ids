@@ -23,7 +23,7 @@ from reporting import build_pdf_report, load_history
 from alert_settings import get_alert_settings, update_alert_to_email
 from auth import (
     login, logout, refresh_access_token, verify_request, has_permission,
-    create_user, list_users, update_user_role, delete_user, toggle_user_active,
+    create_user, list_users, list_tenants, update_user_role, delete_user, toggle_user_active,
     ROLE_PERMISSIONS
 )
 from explainable import explain_prediction
@@ -163,10 +163,10 @@ def startup():
             try:
                 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
                 from migrate_sqlite_to_pg import migrate_all
-                migrate_all()
+                success = migrate_all()
+                time.sleep(30 if success else 120)
             except Exception:
-                pass
-            time.sleep(30)
+                time.sleep(120)
 
     threading.Thread(target=_auto_cloud_sync, daemon=True).start()
 
@@ -260,6 +260,7 @@ class TrafficRecord(BaseModel):
     flow_id:    Optional[str]  = Field('')
     source_ip:  Optional[str]  = Field(None)
     test_mode:  bool           = Field(False)
+    tenant_id:  Optional[str]  = Field('default')
 
     class Config:
         populate_by_name = True
@@ -300,6 +301,7 @@ class RegisterRequest(BaseModel):
     full_name: Optional[str] = ""
     phone: Optional[str] = ""
     designation: Optional[str] = ""
+    tenant_id: Optional[str] = None
 
 
 class RefreshRequest(BaseModel):
@@ -388,6 +390,7 @@ def auth_me(request: Request):
     return {
         "username":    payload["sub"],
         "role":        payload["role"],
+        "tenant_id":   payload.get("tenant_id") or "default",
         "permissions": ROLE_PERMISSIONS.get(payload["role"], [])
     }
 
@@ -396,14 +399,56 @@ def auth_me(request: Request):
 
 @app.post("/auth/users")
 def register_user(req: RegisterRequest, request: Request):
-    require_permission(request, "manage_users")
-    return create_user(req.username, req.email, req.password, req.role, req.full_name, req.phone, req.designation)
+    payload = require_permission(request, "manage_users")
+    caller_tenant = (payload.get("tenant_id") if payload else None) or "default"
+    
+    # If caller is not SuperAdmin, lock assigned tenant to their own tenant
+    if caller_tenant not in ("default", "*"):
+        assigned_tenant = caller_tenant
+    else:
+        assigned_tenant = req.tenant_id or "default"
+
+    return create_user(
+        req.username, req.email, req.password, req.role,
+        req.full_name, req.phone, req.designation,
+        tenant_id=assigned_tenant
+    )
 
 
 @app.get("/auth/users")
-def get_users(request: Request):
-    require_permission(request, "manage_users")
-    return {"users": list_users()}
+def get_users(request: Request, tenant_id: Optional[str] = None):
+    payload = require_permission(request, "manage_users")
+    caller_tenant = (payload.get("tenant_id") if payload else None) or "default"
+    
+    # If caller is tenant admin (e.g. sharma_fabrics), they ONLY see their own users!
+    if caller_tenant not in ("default", "*"):
+        return {
+            "users": list_users(tenant_id=caller_tenant),
+            "caller_tenant": caller_tenant,
+            "is_superadmin": False
+        }
+    
+    # Caller is SuperAdmin: can view all or filter by tenant_id
+    filter_tenant = None if (not tenant_id or tenant_id in ("*", "all")) else tenant_id
+    return {
+        "users": list_users(tenant_id=filter_tenant),
+        "caller_tenant": caller_tenant,
+        "is_superadmin": True,
+        "selected_tenant": filter_tenant or "all"
+    }
+
+
+@app.get("/auth/tenants")
+def get_tenants(request: Request):
+    payload = require_permission(request, "view")
+    caller_tenant = (payload.get("tenant_id") if payload else None) or "default"
+    is_super = caller_tenant in ("default", "*")
+    
+    if not is_super:
+        return {"tenants": [caller_tenant], "is_superadmin": False}
+    
+    all_tenants = list_tenants()
+    return {"tenants": all_tenants, "is_superadmin": True}
 
 
 @app.patch("/auth/users/{username}/role")
@@ -426,13 +471,19 @@ def toggle_user(username: str, request: Request):
 
 @app.get("/admin/alert-settings")
 def get_admin_alert_settings(request: Request):
-    require_permission(request, "manage_users")
+    payload = require_permission(request, "manage_users")
+    caller_tenant = (payload.get("tenant_id") if payload else None) or "default"
+    if caller_tenant not in ("default", "*"):
+        raise HTTPException(status_code=403, detail="Notification settings are reserved for SuperAdmin only")
     return get_alert_settings()
 
 
 @app.patch("/admin/alert-settings")
 def patch_admin_alert_settings(req: AlertSettingsUpdateRequest, request: Request):
-    require_permission(request, "manage_users")
+    payload = require_permission(request, "manage_users")
+    caller_tenant = (payload.get("tenant_id") if payload else None) or "default"
+    if caller_tenant not in ("default", "*"):
+        raise HTTPException(status_code=403, detail="Only SuperAdmin can configure global alert settings")
     email = req.alert_to_email.strip()
     if "@" not in email or "." not in email.split("@")[-1]:
         raise HTTPException(status_code=400, detail="Please provide a valid email address")
@@ -525,8 +576,9 @@ def predict(record: TrafficRecord, http_request: Request):
             "Idle Min":           record.Idle_Min,
         }
         source_ip = record.source_ip or (http_request.client.host if http_request.client else "unknown")
+        tenant_id = getattr(record, "tenant_id", "default") or "default"
         result = detector.predict(data)
-        handle_alert(result, source_ip, flow_id=record.flow_id or "", test_mode=record.test_mode)
+        handle_alert(result, source_ip, flow_id=record.flow_id or "", test_mode=record.test_mode, tenant_id=tenant_id)
         return result
     except FileNotFoundError as e:
         raise HTTPException(status_code=503, detail=str(e))
@@ -570,10 +622,16 @@ def health():
 
 @app.get("/history")
 @app.get("/detections")
-def history(limit: int = 100, mode: str = "live", request: Request = None):
-    # FIX: require "view" permission so viewer/analyst can access dashboard data
+def history(limit: int = 100, mode: str = "live", tenant_id: Optional[str] = None, request: Request = None):
+    # Require "view" permission so viewer/analyst can access dashboard data
     payload = require_permission(request, "view")
-    tenant = (payload.get("tenant_id") if payload else None) or "default"
+    caller_tenant = (payload.get("tenant_id") if payload else None) or "default"
+    
+    if caller_tenant not in ("default", "*"):
+        tenant = caller_tenant
+    else:
+        tenant = None if (tenant_id in ("all", "*")) else (tenant_id or caller_tenant)
+
     df = load_history(limit=limit, mode=mode, tenant_id=tenant)
     if df.empty and mode == "live":
         df = load_history(limit=limit, mode="all", tenant_id=tenant)
@@ -581,10 +639,16 @@ def history(limit: int = 100, mode: str = "live", request: Request = None):
 
 
 @app.get("/stats")
-def stats(mode: str = "live", limit: int | None = None, request: Request = None):
-    # FIX: require "view" permission
+def stats(mode: str = "live", limit: int | None = None, tenant_id: Optional[str] = None, request: Request = None):
+    # Require "view" permission
     payload = require_permission(request, "view")
-    tenant = (payload.get("tenant_id") if payload else None) or "default"
+    caller_tenant = (payload.get("tenant_id") if payload else None) or "default"
+    
+    if caller_tenant not in ("default", "*"):
+        tenant = caller_tenant
+    else:
+        tenant = None if (tenant_id in ("all", "*")) else (tenant_id or caller_tenant)
+
     df = load_history(limit=limit, mode=mode, tenant_id=tenant)
     if df.empty and mode == "live":
         df = load_history(limit=limit, mode="all", tenant_id=tenant)

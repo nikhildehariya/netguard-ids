@@ -25,7 +25,7 @@ COPY src/ ./src/
 COPY models/ ./models/
 COPY data/ ./data/
 COPY scripts/ ./scripts/
-COPY config.py .env* ./
+COPY .env* ./
 
 # Configure Python execution environment
 ENV PYTHONUNBUFFERED=1

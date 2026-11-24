@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import {
@@ -15,7 +15,6 @@ import {
   Terminal,
   Activity,
   CheckCircle2,
-  Cpu,
   Info
 } from "lucide-react";
 import { SectionTitle } from "./Common";
@@ -110,7 +109,9 @@ export default function AssistantTab({ token, API, themeMode }) {
         const data = await res.json();
         setBriefing(data);
       }
-    } catch {}
+    } catch {
+      /* briefing not available */
+    }
   };
 
   useEffect(() => {
@@ -438,31 +439,31 @@ export default function AssistantTab({ token, API, themeMode }) {
                         <ReactMarkdown
                           remarkPlugins={[remarkGfm]}
                           components={{
-                            h1: ({ node, ...props }) => (
+                            h1: ({ ...props }) => (
                               <h1 style={{ fontSize: 16, fontWeight: 700, margin: "14px 0 8px", color: isSoft ? "#0f172a" : "#38bdf8" }} {...props} />
                             ),
-                            h2: ({ node, ...props }) => (
+                            h2: ({ ...props }) => (
                               <h2 style={{ fontSize: 14, fontWeight: 700, margin: "12px 0 6px", borderLeft: "3px solid #0ea5e9", paddingLeft: 8, color: isSoft ? "#0f172a" : "#f1f5f9" }} {...props} />
                             ),
-                            h3: ({ node, ...props }) => (
+                            h3: ({ ...props }) => (
                               <h3 style={{ fontSize: 13, fontWeight: 700, margin: "10px 0 4px", color: isSoft ? "#1e293b" : "#e2e8f0" }} {...props} />
                             ),
-                            p: ({ node, ...props }) => (
+                            p: ({ ...props }) => (
                               <p style={{ margin: "0 0 8px 0", lineHeight: 1.6 }} {...props} />
                             ),
-                            strong: ({ node, ...props }) => (
+                            strong: ({ ...props }) => (
                               <strong style={{ fontWeight: 700, color: isSoft ? "#0284c7" : "#38bdf8" }} {...props} />
                             ),
-                            ul: ({ node, ...props }) => (
+                            ul: ({ ...props }) => (
                               <ul style={{ paddingLeft: 18, margin: "6px 0 10px", display: "flex", flexDirection: "column", gap: 4 }} {...props} />
                             ),
-                            ol: ({ node, ...props }) => (
+                            ol: ({ ...props }) => (
                               <ol style={{ paddingLeft: 18, margin: "6px 0 10px", display: "flex", flexDirection: "column", gap: 4 }} {...props} />
                             ),
-                            li: ({ node, ...props }) => (
+                            li: ({ ...props }) => (
                               <li style={{ lineHeight: 1.5 }} {...props} />
                             ),
-                            code({ node, inline, className, children, ...props }) {
+                            code({ inline, children, ...props }) {
                               if (inline) {
                                 return (
                                   <code style={{

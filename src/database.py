@@ -169,6 +169,28 @@ def release_db_connection(conn):
             pass
 
 
+def get_direct_postgres_connection():
+    """Returns a direct psycopg2 PostgreSQL connection for cloud migration, or None if PostgreSQL is not available/unreachable."""
+    if not PSYCOPG2_OK:
+        return None
+    try:
+        pool = _get_pool()
+        if pool:
+            conn = pool.getconn()
+            if conn and conn.closed == 0:
+                return conn
+    except Exception:
+        pass
+    try:
+        dsn = _get_pg_url()
+        if dsn:
+            conn = psycopg2.connect(dsn, connect_timeout=3)
+            return conn
+    except Exception:
+        pass
+    return None
+
+
 def get_db_mode() -> str:
     return "postgres" if (USE_POSTGRES and PSYCOPG2_OK) else "sqlite"
 
@@ -244,6 +266,11 @@ def init_pg_db():
                         timestamp VARCHAR(100) NOT NULL,
                         detail    TEXT
                     );
+                    CREATE INDEX IF NOT EXISTS idx_pg_det_ts ON detections(timestamp);
+                    CREATE INDEX IF NOT EXISTS idx_pg_det_prediction ON detections(prediction);
+                    CREATE INDEX IF NOT EXISTS idx_pg_det_source_ip ON detections(source_ip);
+                    CREATE INDEX IF NOT EXISTS idx_pg_det_severity ON detections(severity);
+                    CREATE INDEX IF NOT EXISTS idx_pg_det_tenant ON detections(tenant_id);
                 """)
             else:
                 # SQLite DDL

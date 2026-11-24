@@ -1,4 +1,3 @@
-import React from "react";
 import { COLORS, SEV_COLOR, SectionTitle, Pill } from "./Common";
 import { TokenStore } from "../App";
 
