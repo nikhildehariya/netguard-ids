@@ -6,7 +6,6 @@ keys/.*
 # Python & Caching
 __pycache__/
 *.pyc
-*.pkl
 
 # Build & Dependencies
 node_modules/
@@ -16,12 +15,17 @@ react-dashboard/dist/
 # Project Data & Logs
 logs/
 data/
-models/
 reports/
 pilot_deployments/
 *.db
 *.csv
 *.log
+
+# Models: Ignore heavy datasets/joblibs, allow core trained models (~5.2 MB) for instant deployment anywhere
+models/*
+!models/xgb_model.pkl
+!models/iforest_model.pkl
+!models/scaler.pkl
 
 # IDE & System Files
 scratch/
